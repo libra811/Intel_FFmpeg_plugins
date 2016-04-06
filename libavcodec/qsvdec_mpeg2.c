@@ -27,10 +27,12 @@
 #include "avcodec.h"
 #include "qsvdec.h"
 
+#if 0
 typedef struct QSVMPEG2Context {
     AVClass *class;
     QSVContext qsv;
 } QSVMPEG2Context;
+#endif
 
 static av_cold int qsv_decode_close(AVCodecContext *avctx)
 {
@@ -43,7 +45,8 @@ static av_cold int qsv_decode_close(AVCodecContext *avctx)
 
 static av_cold int qsv_decode_init(AVCodecContext *avctx)
 {
-    return 0;
+    QSVMPEG2Context *s = avctx->priv_data;
+    return ff_qsv_decode_init_session(avctx, &s->qsv);
 }
 
 static int qsv_decode_frame(AVCodecContext *avctx, void *data,
@@ -51,12 +54,13 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
 {
     QSVMPEG2Context *s = avctx->priv_data;
     AVFrame *frame    = data;
-
     return ff_qsv_decode(avctx, &s->qsv, frame, got_frame, avpkt);
 }
 
 static void qsv_decode_flush(AVCodecContext *avctx)
 {
+    QSVMPEG2Context *s = avctx->priv_data;
+    ff_qsv_decode_reset(avctx, &s->qsv);
 }
 
 AVHWAccel ff_mpeg2_qsv_hwaccel = {
@@ -70,6 +74,7 @@ AVHWAccel ff_mpeg2_qsv_hwaccel = {
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
     { "async_depth", "Internal parallelization depth, the higher the value the higher the latency.", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, VD },
+	
     { NULL },
 };
 

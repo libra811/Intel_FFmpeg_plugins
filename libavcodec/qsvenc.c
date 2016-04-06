@@ -35,7 +35,7 @@
 #include "internal.h"
 #include "qsv.h"
 #include "qsv_internal.h"
-#include "qsvenc.h"
+#include "qsvdec.h"
 
 static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 {
@@ -114,15 +114,23 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         } else
 #endif
         {
-            q->param.mfx.RateControlMethod = MFX_RATECONTROL_AVBR;
+#if 0
+			q->param.mfx.RateControlMethod = MFX_RATECONTROL_AVBR;
             ratecontrol_desc = "average variable bitrate (AVBR)";
+#else
+        	q->param.mfx.RateControlMethod = MFX_RATECONTROL_VBR;
+        	ratecontrol_desc = "variable bitrate (VBR)";
+#endif
         }
     } else {
         q->param.mfx.RateControlMethod = MFX_RATECONTROL_VBR;
         ratecontrol_desc = "variable bitrate (VBR)";
     }
 
-    av_log(avctx, AV_LOG_VERBOSE, "Using the %s ratecontrol method\n", ratecontrol_desc);
+    //q->param.mfx.RateControlMethod = MFX_RATECONTROL_VBR;
+	//ratecontrol_desc = "variable bitrate (VBR)";
+    //av_log(avctx, AV_LOG_VERBOSE, "Using the %s ratecontrol method\n", ratecontrol_desc);
+    av_log(NULL, AV_LOG_INFO, "Using the %s ratecontrol method\n", ratecontrol_desc);
 
     switch (q->param.mfx.RateControlMethod) {
     case MFX_RATECONTROL_CBR:
@@ -148,6 +156,30 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->param.mfx.Accuracy    = q->avbr_accuracy;
         break;
     }
+    av_log(NULL, AV_LOG_INFO, "codecID=%d, profile=%d, level=%d, targetUsage=%d, max_b_frames=%d,IdrInterval=%d, width=%d, height=%d, gop_size=%d, flags=%x, slices=%d, refs=%d, aW=%d, aH=%d buf_occup=%d, width=%d,height=%d, FrameRateN=%d, FrameRateD=%d, time_den=%d, time_num=%d bit_rate=%d, max_bit_rate=%d\n",  
+            q->param.mfx.CodecId,
+            q->profile, 
+            avctx->level,
+            q->preset,
+            avctx->max_b_frames,
+            q->idr_interval, 
+            avctx->width,
+            avctx->height,
+            avctx->gop_size,
+            avctx->flags,
+            avctx->slices,
+            avctx->refs,
+            avctx->sample_aspect_ratio.num,
+            avctx->sample_aspect_ratio.den,
+            avctx->rc_initial_buffer_occupancy,
+            q->param.mfx.FrameInfo.Width,
+            q->param.mfx.FrameInfo.Height,
+            avctx->framerate.num,
+            avctx->framerate.den,
+            avctx->time_base.den,
+            avctx->time_base.num,
+            avctx->bit_rate,
+            avctx->rc_max_rate);
 
     // the HEVC encoder plugin currently fails if coding options
     // are provided
@@ -156,10 +188,8 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->extco.Header.BufferSz      = sizeof(q->extco);
         q->extco.CAVLC                = avctx->coder_type == FF_CODER_TYPE_VLC ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
-
         q->extco.PicTimingSEI         = q->pic_timing_sei ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
-
         q->extparam[0] = (mfxExtBuffer *)&q->extco;
 
 #if QSV_VERSION_ATLEAST(1,6)
@@ -175,6 +205,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->extco2.LookAheadDS           = q->look_ahead_downsampling;
 #endif
 
+		q->extco2.BitrateLimit          = MFX_CODINGOPTION_OFF;
         q->extparam[1] = (mfxExtBuffer *)&q->extco2;
 
 #endif
@@ -236,45 +267,65 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
 {
     int ret;
 
-    q->param.IOPattern  = MFX_IOPATTERN_IN_SYSTEM_MEMORY;
+	av_log(NULL, AV_LOG_INFO, "ff_qsv_enc_init is here: %p\n", q->session);
+
     q->param.AsyncDepth = q->async_depth;
 
     q->async_fifo = av_fifo_alloc((1 + q->async_depth) *
                                   (sizeof(AVPacket) + sizeof(mfxSyncPoint) + sizeof(mfxBitstream*)));
     if (!q->async_fifo)
         return AVERROR(ENOMEM);
-
+#if 0
     if (avctx->hwaccel_context) {
         AVQSVContext *qsv = avctx->hwaccel_context;
 
         q->session         = qsv->session;
         q->param.IOPattern = qsv->iopattern;
     }
-
+#endif
     if (!q->session) {
         ret = ff_qsv_init_internal_session(avctx, &q->internal_qs,
                                            q->load_plugins);
-        if (ret < 0)
+        if (ret < 0){
+	        av_log(NULL, AV_LOG_ERROR,"init internal session return %d\n", ret);
             return ret;
+    	}
 
         q->session = q->internal_qs.session;
     }
 
+	if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
+	    av_log(NULL, AV_LOG_INFO, "ff_qsv_enc_init::MFX_IOPATTERN_IN_VIDEO_MEMORY\n");
+        q->param.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY;
+	}else{
+		av_log(NULL, AV_LOG_INFO, "ff_qsv_enc_init::MFX_IOPATTERN_IN_SYSTEM_MEMORY\n");
+        q->param.IOPattern = MFX_IOPATTERN_IN_SYSTEM_MEMORY;
+	}
+		
     ret = init_video_param(avctx, q);
     if (ret < 0)
         return ret;
+
+    av_log(NULL, AV_LOG_INFO, "ENCODE QueryIOSurf start: session=%p\n", q->session);
 
     ret = MFXVideoENCODE_QueryIOSurf(q->session, &q->param, &q->req);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error querying the encoding parameters\n");
         return ff_qsv_error(ret);
     }
+    av_log(NULL, AV_LOG_INFO, "Encoder request %d surfaces\n", q->req.NumFrameSuggested);
 
+
+	if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
+        MFXVideoCORE_SetHandle( q->session, MFX_HANDLE_VA_DISPLAY, q->internal_qs.va_display );
+	}
+
+    av_log(NULL, AV_LOG_INFO, "MFXVideoENCODE_Init here\n");
     ret = MFXVideoENCODE_Init(q->session, &q->param);
     if (MFX_WRN_PARTIAL_ACCELERATION==ret) {
         av_log(avctx, AV_LOG_WARNING, "Encoder will work with partial HW acceleration\n");
     } else if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing the encoder\n");
+        av_log(avctx, AV_LOG_ERROR, "Error initializing the encoder: %d\n", ret);
         return ff_qsv_error(ret);
     }
 
@@ -285,6 +336,8 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     q->avctx = avctx;
+
+	av_log(NULL, AV_LOG_INFO, "ENCODEC: ff_qsv_enc_init is done!\n");
 
     return 0;
 }
@@ -334,7 +387,21 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
     return 0;
 }
 
-static int submit_frame(QSVEncContext *q, const AVFrame *frame,
+static int submit_frame_videomem(QSVEncContext *q, const AVFrame *frame,
+                        mfxFrameSurface1 **surface)
+{
+    if( frame->data[3]!=NULL )
+    {
+        *surface = (mfxFrameSurface1*)frame->data[3];
+        //printf("ENCODE: surface MemId=%p Lock=%d\n", (*surface)->Data.MemId, (*surface)->Data.Locked);
+        (*surface)->Data.TimeStamp = av_rescale_q(frame->pts, q->avctx->time_base, (AVRational){1, 90000}); 
+        return 0;
+    }
+
+    return -1;
+}
+
+static int submit_frame_sysmem(QSVEncContext *q, const AVFrame *frame,
                         mfxFrameSurface1 **surface)
 {
     QSVFrame *qf;
@@ -402,6 +469,19 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
     return 0;
 }
 
+
+static int submit_frame(QSVEncContext *q, const AVFrame *frame,
+                        mfxFrameSurface1 **surface)
+{
+    if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
+        return submit_frame_videomem(q, frame, surface);
+    }else{
+        return submit_frame_sysmem(q, frame, surface);
+    }
+
+    return 0;
+}
+
 static void print_interlace_msg(AVCodecContext *avctx, QSVEncContext *q)
 {
     if (q->param.mfx.CodecId == MFX_CODEC_AVC) {
@@ -419,7 +499,6 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
 {
     AVPacket new_pkt = { 0 };
     mfxBitstream *bs;
-
     mfxFrameSurface1 *surf = NULL;
     mfxSyncPoint sync      = NULL;
     int ret;
@@ -445,14 +524,30 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
     }
     bs->Data      = new_pkt.data;
     bs->MaxLength = new_pkt.size;
-
     do {
         ret = MFXVideoENCODE_EncodeFrameAsync(q->session, NULL, surf, bs, &sync);
         if (ret == MFX_WRN_DEVICE_BUSY) {
             av_usleep(500);
             continue;
         }
-        break;
+#if 0
+        printf("MFXVideoENCODE_EncodeFrameAsync surf=%p sync=%d, ret=%d\n",surf->Data.MemId, sync, ret);
+        printf("DECODE: surface info: width=%d height=%d %d %d %d %d\n", 
+                        surf->Info.Width, 
+                        surf->Info.Height, 
+                        surf->Info.CropX, 
+                        surf->Info.CropY, 
+                        surf->Info.CropW, 
+                        surf->Info.CropH);
+    	printf("DECODE: surface info: FourCC=%d ChromaFormat=%d\n", 
+    	                (surf->Info.FourCC!=MFX_FOURCC_NV12)?1:0, 
+    	                (surf->Info.ChromaFormat!=MFX_CHROMAFORMAT_YUV420)?1:0);
+    	printf("DECODE: surface info: BitDepthLuma=%d, BitDepthChroma=%d, Shift=%d\n",
+    	                surf->Info.BitDepthLuma, 
+    	                surf->Info.BitDepthChroma, 
+    	                surf->Info.Shift); 
+#endif
+		break;
     } while ( 1 );
 
     if (ret < 0) {
@@ -480,7 +575,7 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
         av_freep(&bs);
     }
 
-    if (!av_fifo_space(q->async_fifo) ||
+    if (av_fifo_size(q->async_fifo) ||
         (!frame && av_fifo_size(q->async_fifo))) {
         av_fifo_generic_read(q->async_fifo, &new_pkt, sizeof(new_pkt), NULL);
         av_fifo_generic_read(q->async_fifo, &sync,    sizeof(sync),    NULL);
@@ -542,14 +637,16 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
 
     ff_qsv_close_internal_session(&q->internal_qs);
 
-    cur = q->work_frames;
-    while (cur) {
-        q->work_frames = cur->next;
-        av_frame_free(&cur->frame);
-        av_freep(&cur);
-        cur = q->work_frames;
-    }
-
+    //free in decoder if video memory is used
+ 	if( q->iopattern == MFX_IOPATTERN_OUT_SYSTEM_MEMORY ){
+  		cur = q->work_frames;
+		while (cur) {
+			q->work_frames = cur->next;
+			av_frame_free(&cur->frame);
+			av_freep(&cur);
+			cur = q->work_frames;
+        }
+	}
     while (q->async_fifo && av_fifo_size(q->async_fifo)) {
         AVPacket pkt;
         mfxSyncPoint sync;

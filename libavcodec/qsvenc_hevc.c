@@ -42,12 +42,6 @@ enum LoadPlugin {
     LOAD_PLUGIN_HEVC_HW,
 };
 
-typedef struct QSVHEVCEncContext {
-    AVClass *class;
-    QSVEncContext qsv;
-    int load_plugin;
-} QSVHEVCEncContext;
-
 static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
 {
     GetByteContext gbc;

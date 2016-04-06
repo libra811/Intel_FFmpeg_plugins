@@ -38,6 +38,7 @@ typedef struct QSVEncContext {
     AVCodecContext *avctx;
 
     QSVFrame *work_frames;
+    mfxFrameAllocator *frame_allocator;
 
     mfxSession session;
     QSVSession internal_qs;
@@ -48,6 +49,8 @@ typedef struct QSVEncContext {
 
     mfxVideoParam param;
     mfxFrameAllocRequest req;
+    mfxFrameAllocResponse resq;
+    int nb_frame_requested;
 
     mfxExtCodingOption  extco;
 #if QSV_VERSION_ATLEAST(1,6)
@@ -70,9 +73,27 @@ typedef struct QSVEncContext {
     int look_ahead;
     int look_ahead_depth;
     int look_ahead_downsampling;
+	int iopattern;
 
     char *load_plugins;
 } QSVEncContext;
+
+typedef struct QSVH264EncContext {
+    AVClass *class;
+    QSVEncContext qsv;
+} QSVH264EncContext;
+
+typedef struct QSVHEVCEncContext {
+    AVClass *class;
+    QSVEncContext qsv;
+    int load_plugin;
+} QSVHEVCEncContext;
+
+
+typedef struct QSVMpeg2EncContext {
+    AVClass *class;
+    QSVEncContext qsv;
+} QSVMpeg2EncContext;
 
 int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q);
 

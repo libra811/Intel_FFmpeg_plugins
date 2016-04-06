@@ -35,11 +35,6 @@
 #include "qsv_internal.h"
 #include "qsvenc.h"
 
-typedef struct QSVH264EncContext {
-    AVClass *class;
-    QSVEncContext qsv;
-} QSVH264EncContext;
-
 static av_cold int qsv_enc_init(AVCodecContext *avctx)
 {
     QSVH264EncContext *q = avctx->priv_data;
@@ -72,7 +67,7 @@ static const AVOption options[] = {
     { "pic_timing_sei",    "Insert picture timing SEI with pic_struct_syntax element", OFFSET(qsv.pic_timing_sei), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
 
 #if QSV_VERSION_ATLEAST(1,7)
-    { "look_ahead",       "Use VBR algorithm with look ahead",    OFFSET(qsv.look_ahead),       AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
+    { "look_ahead",       "Use VBR algorithm with look ahead",    OFFSET(qsv.look_ahead),       AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "look_ahead_depth", "Depth of look ahead in number frames", OFFSET(qsv.look_ahead_depth), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 100, VE },
 #endif
 

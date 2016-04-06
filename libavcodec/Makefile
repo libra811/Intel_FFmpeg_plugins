@@ -10,6 +10,7 @@ HEADERS = avcodec.h                                                     \
           old_codec_ids.h                                               \
           qsv.h                                                         \
           vaapi.h                                                       \
+		  vaapi_allocator.h                                             \
           vda.h                                                         \
           vdpau.h                                                       \
           version.h                                                     \
@@ -30,6 +31,7 @@ OBJS = allcodecs.o                                                      \
        mathtables.o                                                     \
        options.o                                                        \
        parser.o                                                         \
+	   vaapi_allocator.o                                                \
        qsv_api.o                                                        \
        raw.o                                                            \
        resample.o                                                       \

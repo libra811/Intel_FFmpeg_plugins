@@ -49,15 +49,18 @@
     (MFX_VERSION_MAJOR > (MAJOR) ||         \
      MFX_VERSION_MAJOR == (MAJOR) && MFX_VERSION_MINOR >= (MINOR))
 
+#define AVFILTER_NONE     0
+#define AVFILTER_VPP_ONLY 1
+#define AVFILTER_MORE     2
+
 typedef struct QSVFrame {
     AVFrame *frame;
     mfxFrameSurface1 *surface;
-
     mfxFrameSurface1 surface_internal;
-
+    mfxSyncPoint sync_point;
     int queued;
-
     struct QSVFrame *next;
+    int num;
 } QSVFrame;
 
 typedef struct QSVSession {

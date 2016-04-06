@@ -33,11 +33,6 @@
 #include "qsv_internal.h"
 #include "qsvenc.h"
 
-typedef struct QSVMpeg2EncContext {
-    AVClass *class;
-    QSVEncContext qsv;
-} QSVMpeg2EncContext;
-
 static av_cold int qsv_enc_init(AVCodecContext *avctx)
 {
     QSVMpeg2EncContext *q = avctx->priv_data;

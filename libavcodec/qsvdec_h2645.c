@@ -39,18 +39,17 @@ enum LoadPlugin {
     LOAD_PLUGIN_NONE,
     LOAD_PLUGIN_HEVC_SW,
 };
-
+#if 0
 typedef struct QSVH2645Context {
     AVClass *class;
     QSVContext qsv;
-
     int load_plugin;
 
     // the filter for converting to Annex B
     AVBitStreamFilterContext *bsf;
 
 } QSVH2645Context;
-
+#endif
 static av_cold int qsv_decode_close(AVCodecContext *avctx)
 {
     QSVH2645Context *s = avctx->priv_data;
@@ -86,12 +85,14 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
         s->bsf = av_bitstream_filter_init("h264_mp4toannexb");
     else
         s->bsf = av_bitstream_filter_init("hevc_mp4toannexb");
+
     if (!s->bsf) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
 
-    return 0;
+    ret = ff_qsv_decode_init_session(avctx, &s->qsv);
+    return ret;
 fail:
     qsv_decode_close(avctx);
     return ret;
@@ -100,6 +101,7 @@ fail:
 static int qsv_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
 {
+	
     QSVH2645Context *s = avctx->priv_data;
     AVFrame *frame    = data;
     int ret;
@@ -124,7 +126,7 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
                 pkt_filtered.size = n_filtered;
 
                 ret = ff_qsv_decode(avctx, &s->qsv, frame, got_frame, &pkt_filtered);
-
+		
                 if (p_filtered != avpkt->data)
                     av_free(p_filtered);
                 return ret > 0 ? avpkt->size : ret;
@@ -137,8 +139,8 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
 
 static void qsv_decode_flush(AVCodecContext *avctx)
 {
-//    QSVH2645Context *s = avctx->priv_data;
-    /* TODO: flush qsv engine if necessary */
+    QSVH2645Context *s = avctx->priv_data;
+    ff_qsv_decode_reset(avctx, &s->qsv);
 }
 
 #define OFFSET(x) offsetof(QSVH2645Context, x)
@@ -154,10 +156,9 @@ AVHWAccel ff_hevc_qsv_hwaccel = {
 
 static const AVOption hevc_options[] = {
     { "async_depth", "Internal parallelization depth, the higher the value the higher the latency.", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, VD },
-
     { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_HEVC_SW }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_SW, VD, "load_plugin" },
-    { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_NONE },    0, 0, VD, "load_plugin" },
-    { "hevc_sw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_SW }, 0, 0, VD, "load_plugin" },
+    { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_NONE },    INT_MIN, INT_MAX, VD, "load_plugin" },
+    { "hevc_sw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_SW }, INT_MIN, INT_MAX, VD, "load_plugin" },
 
     { "load_plugins", "A :-separate list of hexadecimal plugin UIDs to load in an internal session",
         OFFSET(qsv.load_plugins), AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
