@@ -97,8 +97,6 @@ typedef struct {
     int async_depth;            // async dept used by encoder
     int max_b_frames;           // maxiumum number of b frames used by encoder
 
-    int cur_out_idx;            // current surface in index
-
     int frame_number;
 
     int use_frc;                // use framerate conversion

@@ -590,7 +590,7 @@ static int get_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurface1 **
 //add this functions to allocate more surface dynamically when video_memory is used 
 //because decoder cannot know the frame count needed by vpp or encoder before they 
 //are initilized.
-static int alloc_frames_more(AVCodecContext *avctx, QSVContext *q, int num)
+/*static int alloc_frames_more(AVCodecContext *avctx, QSVContext *q, int num)
 {
 	q->request->NumFrameMin = num;
 	q->request->NumFrameSuggested = num;
@@ -598,7 +598,7 @@ static int alloc_frames_more(AVCodecContext *avctx, QSVContext *q, int num)
 	av_log( avctx, AV_LOG_INFO, "frame_allocator more: NumFrameActual=%d\n",q->response->NumFrameActual);
 	 
 	return 0;
-}
+}*/
 
 static int get_free_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurface1 **surf)
 {
@@ -629,8 +629,8 @@ static int get_free_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurfac
 			break;
 		}
 		else{
-			av_log( avctx, AV_LOG_ERROR, "waiting until there are free surface" );
-			alloc_frames_more(avctx, q, 10 );
+			av_log( avctx, AV_LOG_INFO, "waiting until there are free surface\n" );
+//			alloc_frames_more(avctx, q, 10 );
 			av_usleep(1000);
 		}
 
@@ -740,7 +740,7 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
 	mfxFrameSurface1* outsurface;
 	mfxSyncPoint sync;
 	
-    static int count =0;	
+    static int count =0;
     mfxBitstream bs = { { { 0 } } };
     int ret;
     int n_out_frames;
@@ -824,6 +824,10 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
                av_fifo_reset(q->input_fifo);
                flush = q->reinit_pending = 1;
                continue;
+        } else if (MFX_ERR_UNDEFINED_BEHAVIOR == ret){
+            av_log(avctx, AV_LOG_INFO, "before reset, bs.data=%p, bs.size=%u, bs.offset=%u\n",
+                    bs.Data, bs.MaxLength, bs.DataOffset);
+            ff_qsv_decode_reset(avctx, q);
         }
 
         if (sync) {
@@ -998,11 +1002,13 @@ int ff_qsv_decode(AVCodecContext *avctx, QSVContext *q,
 */
 void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q)
 {
-    QSVFrame *cur;
+//    QSVFrame *cur;
     AVPacket pkt;
     int ret = 0;
     mfxVideoParam param = { { 0 } };
 
+    av_log(avctx, AV_LOG_INFO, "%s() requested with %s\n", __FUNCTION__, 
+        q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ? "vidmem" : "sysmem");
     if (q->reinit_pending) {
         close_decoder(q);
     } else if (q->engine_ready) {
@@ -1017,13 +1023,13 @@ void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q)
         }
 
         /* Free all frames*/
-        cur = q->work_frames;
+        /*cur = q->work_frames;
         while (cur) {
             q->work_frames = cur->next;
             av_frame_free(&cur->frame);
             av_freep(&cur);
             cur = q->work_frames;
-        }
+        }*/
     }
 
     /* Reset output surfaces */

@@ -426,7 +426,6 @@ static int config_vpp_param(AVFilterLink *inlink)*/
 
     vpp->pVppParam->NumExtParam = 0;
     vpp->frame_number = 0;
-    vpp->cur_out_idx  = 0;
     vpp->pVppParam->ExtParam = (mfxExtBuffer**)vpp->pExtBuf;
 
     if (vpp->deinterlace) {
@@ -583,18 +582,9 @@ static int get_free_surface_index_out(AVFilterContext *ctx, mfxFrameSurface1 ** 
     VPPContext *vpp = ctx->priv;
 
     if (surface_pool) {
-        for (mfxU16 i = 0; i < pool_size; i++) {
-            if (0 == surface_pool[i]->Data.Locked) {
-                if (i == vpp->cur_out_idx) {
-                   if (vpp->cur_out_idx == pool_size - 1)
-                       vpp->cur_out_idx = 0;
-                   else
-                       vpp->cur_out_idx ++;
-
-                   return i;
-                }
-            }
-        }
+        for (mfxU16 i = 0; i < pool_size; i++)
+            if (0 == surface_pool[i]->Data.Locked)
+               return i;
     }
 
     av_log(ctx, AV_LOG_ERROR, "Error getting a free surface, pool size is %d\n", pool_size);
