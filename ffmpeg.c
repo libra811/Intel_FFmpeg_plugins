@@ -69,8 +69,7 @@
 # include "libavfilter/buffersrc.h"
 # include "libavfilter/buffersink.h"
 
-#include "libavcodec/qsvdec.h"
-#include "libavcodec/qsvenc.h"
+#include "libavcodec/qsv.h"
 
 #if HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
@@ -2782,6 +2781,9 @@ static int transcode_init(void)
     InputStream *ist;
     char error[1024] = {0};
     int want_sdp = 1;
+#if CONFIG_QSV
+    AVFilterContext *vpp_ctx = NULL;
+#endif
 
     for (i = 0; i < nb_filtergraphs; i++) {
         FilterGraph *fg = filtergraphs[i];
@@ -3176,6 +3178,24 @@ static int transcode_init(void)
         }
     }
 
+#if !CONFIG_QSV
+    for (i = 0; i < nb_output_streams; i++) {
+        ret = init_output_stream(output_streams[i], error, sizeof(error));
+        if (ret < 0)
+            goto dump_format;
+    }
+
+    /* init input streams */
+    for (i = 0; i < nb_input_streams; i++){
+        if ((ret = init_input_stream(i, error, sizeof(error))) < 0) {
+            for (i = 0; i < nb_output_streams; i++) {
+                ost = output_streams[i];
+                avcodec_close(ost->enc_ctx);
+            }
+            goto dump_format;
+        }
+    }
+#else
     /* init input streams */
     for (i = 0; i < nb_input_streams; i++)
         if ((ret = init_input_stream(i, error, sizeof(error))) < 0) {
@@ -3215,18 +3235,22 @@ static int transcode_init(void)
             for( int k = 0; k <  filtergraphs[i]->graph->nb_filters; k++){
                 av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  filtergraphs[i]->graph->filters[k]->name );
             }
-            ff_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
+            av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
 
             if( AVFILTER_VPP_ONLY == vpp_type ){
-                AVFilterContext *vpp_ctx = avfilter_graph_get_filter(filtergraphs[i]->graph, "Parsed_vpp_0" );
-                ff_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
+                vpp_ctx = avfilter_graph_get_filter(filtergraphs[i]->graph, "Parsed_vpp_0" );
+                av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
             }
         }
 
         ret = init_output_stream(output_streams[i], error, sizeof(error));
         if (ret < 0)
             goto dump_format;
+
+        if( vpp_ctx != NULL )
+            av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den );
     }
+#endif
 
     /* discard unused programs */
     for (i = 0; i < nb_input_files; i++) {

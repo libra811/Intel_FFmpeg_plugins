@@ -100,6 +100,7 @@ typedef struct {
     int frame_number;
 
     int use_frc;                // use framerate conversion
+    int vpp_ready;
 
 } VPPContext;
 

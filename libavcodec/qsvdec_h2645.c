@@ -106,7 +106,7 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
     AVFrame *frame    = data;
     int ret;
     uint8_t *p_filtered = NULL;
-    int      n_filtered = NULL;
+    int      n_filtered = 0;
     AVPacket pkt_filtered = { 0 };
 
     if (avpkt->size) {

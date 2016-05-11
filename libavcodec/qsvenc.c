@@ -157,29 +157,30 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         break;
     }
     av_log(NULL, AV_LOG_INFO, "codecID=%d, profile=%d, level=%d, targetUsage=%d, max_b_frames=%d,IdrInterval=%d, width=%d, height=%d, gop_size=%d, flags=%x, slices=%d, refs=%d, aW=%d, aH=%d buf_occup=%d, width=%d,height=%d, FrameRateN=%d, FrameRateD=%d, time_den=%d, time_num=%d bit_rate=%d, max_bit_rate=%d\n",  
-            q->param.mfx.CodecId,
-            q->profile, 
-            avctx->level,
-            q->preset,
-            avctx->max_b_frames,
-            q->idr_interval, 
+			q->param.mfx.CodecId,
+			q->profile, 
+			avctx->level,
+			q->preset,
+			avctx->max_b_frames,
+			q->idr_interval, 
             avctx->width,
-            avctx->height,
-            avctx->gop_size,
-            avctx->flags,
+			avctx->height,
+			avctx->gop_size,
+			avctx->flags,
             avctx->slices,
-            avctx->refs,
-            avctx->sample_aspect_ratio.num,
+			avctx->refs,
+			avctx->sample_aspect_ratio.num,
             avctx->sample_aspect_ratio.den,
-            avctx->rc_initial_buffer_occupancy,
-            q->param.mfx.FrameInfo.Width,
-            q->param.mfx.FrameInfo.Height,
+			avctx->rc_initial_buffer_occupancy,
+			q->param.mfx.FrameInfo.Width,
+			q->param.mfx.FrameInfo.Height,
             avctx->framerate.num,
             avctx->framerate.den,
             avctx->time_base.den,
-            avctx->time_base.num,
-            avctx->bit_rate,
-            avctx->rc_max_rate);
+			avctx->time_base.num,
+			avctx->bit_rate,
+			avctx->rc_max_rate
+			);
 
     // the HEVC encoder plugin currently fails if coding options
     // are provided
@@ -188,8 +189,10 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->extco.Header.BufferSz      = sizeof(q->extco);
         q->extco.CAVLC                = avctx->coder_type == FF_CODER_TYPE_VLC ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
+
         q->extco.PicTimingSEI         = q->pic_timing_sei ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
+
         q->extparam[0] = (mfxExtBuffer *)&q->extco;
 
 #if QSV_VERSION_ATLEAST(1,6)
@@ -473,13 +476,13 @@ static int submit_frame_sysmem(QSVEncContext *q, const AVFrame *frame,
 static int submit_frame(QSVEncContext *q, const AVFrame *frame,
                         mfxFrameSurface1 **surface)
 {
-    if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
-        return submit_frame_videomem(q, frame, surface);
-    }else{
-        return submit_frame_sysmem(q, frame, surface);
-    }
+	if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
+		return submit_frame_videomem(q, frame, surface);
+	}else{
+		return submit_frame_sysmem(q, frame, surface);
+	}
 
-    return 0;
+	return 0;
 }
 
 static void print_interlace_msg(AVCodecContext *avctx, QSVEncContext *q)

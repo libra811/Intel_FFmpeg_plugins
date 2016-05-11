@@ -119,6 +119,4 @@ void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q);
 int ff_qsv_decode_close(QSVContext *q);
 
 int ff_qsv_decode_init_session(AVCodecContext *avctx, QSVContext *q);
-int ff_qsv_pipeline_connect_codec( AVCodecContext *av_dec_ctx, AVCodecContext *av_enc_ctx, int vpp_type );
-int ff_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp_ctx );
 #endif /* AVCODEC_QSVDEC_H */

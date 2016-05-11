@@ -10,7 +10,6 @@ HEADERS = avcodec.h                                                     \
           old_codec_ids.h                                               \
           qsv.h                                                         \
           vaapi.h                                                       \
-		  vaapi_allocator.h                                             \
           vda.h                                                         \
           vdpau.h                                                       \
           version.h                                                     \
@@ -31,7 +30,6 @@ OBJS = allcodecs.o                                                      \
        mathtables.o                                                     \
        options.o                                                        \
        parser.o                                                         \
-	   vaapi_allocator.o                                                \
        qsv_api.o                                                        \
        raw.o                                                            \
        resample.o                                                       \
@@ -101,7 +99,7 @@ OBJS-$(CONFIG_MSS34DSP)                += mss34dsp.o
 OBJS-$(CONFIG_NVENC)                   += nvenc.o
 OBJS-$(CONFIG_PIXBLOCKDSP)             += pixblockdsp.o
 OBJS-$(CONFIG_QPELDSP)                 += qpeldsp.o
-OBJS-$(CONFIG_QSV)                     += qsv.o
+OBJS-$(CONFIG_QSV)                     += qsv.o vaapi_allocator.o
 OBJS-$(CONFIG_QSVDEC)                  += qsvdec.o
 OBJS-$(CONFIG_QSVENC)                  += qsvenc.o
 OBJS-$(CONFIG_RANGECODER)              += rangecoder.o

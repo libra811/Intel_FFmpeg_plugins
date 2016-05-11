@@ -169,7 +169,7 @@ static int codec_connect( QSVContext* qsv_dec_ctx, AVCodecContext* av_dec_ctx, A
 }
 
 #if 1 
-int ff_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp_ctx )
+int av_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp_ctx )
 {
     VPPContext *vpp = NULL;
 	QSVContext *qsv = NULL;
@@ -204,7 +204,7 @@ int ff_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp
 }
 #endif
 
-int ff_qsv_pipeline_connect_codec( AVCodecContext *av_dec_ctx, AVCodecContext *av_enc_ctx, int vpp_type )
+int av_qsv_pipeline_connect_codec( AVCodecContext *av_dec_ctx, AVCodecContext *av_enc_ctx, int vpp_type )
 {
     QSVContext *qsv = NULL;
     if( (strcmp(av_dec_ctx->codec->name, "h264_qsv")==0) ||  (strcmp(av_dec_ctx->codec->name, "hevc_qsv")==0 ) ){
@@ -447,7 +447,13 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
         av_log(avctx, AV_LOG_ERROR, "QueryIOSurf failed with return %d\n", ret);
         return ff_qsv_error( ret );
     }
-	
+
+	av_log(avctx, AV_LOG_INFO, "DECODE: QueryIOSurf ret=%d W=%d H=%d FourCC=%08x "
+            "NumFrameSuggested=%d, vpp->NumFrameSuggested=%d\n",
+            ret, q->request->Info.Width, q->request->Info.Height,
+            q->request->Info.FourCC, q->request->NumFrameSuggested,
+            q->vpp ? q->vpp->req[0].NumFrameSuggested : -1);
+
 	if( NULL != q->enc_ctx ){
 		if( NULL == q->vpp ){
 			q->request->NumFrameSuggested += q->enc_ctx->req.NumFrameSuggested;
@@ -458,10 +464,6 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 		}
 			
 	}
-
-
-    av_log(avctx, AV_LOG_INFO, "DECODE: QueryIOSurf ret=%d W=%d H=%d NumFrameMin=%d NumFrameSuggested=%d FourCC=%08x\n",
-            ret,q->request->Info.Width, q->request->Info.Height, q->request->NumFrameMin, q->request->NumFrameSuggested, q->request->Info.FourCC);
 
     av_log(avctx, AV_LOG_INFO, "DECODE: start  DECODE_Init\n");
    // q->frame_allocator.Alloc( q, q->request, q->response);
@@ -629,7 +631,7 @@ static int get_free_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurfac
 			break;
 		}
 		else{
-			av_log( avctx, AV_LOG_INFO, "waiting until there are free surface\n" );
+			av_log( avctx, AV_LOG_ERROR, "waiting until there are free surface" );
 //			alloc_frames_more(avctx, q, 10 );
 			av_usleep(1000);
 		}
@@ -824,11 +826,8 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
                av_fifo_reset(q->input_fifo);
                flush = q->reinit_pending = 1;
                continue;
-        } else if (MFX_ERR_UNDEFINED_BEHAVIOR == ret){
-            av_log(avctx, AV_LOG_INFO, "before reset, bs.data=%p, bs.size=%u, bs.offset=%u\n",
-                    bs.Data, bs.MaxLength, bs.DataOffset);
+        } else if (MFX_ERR_UNDEFINED_BEHAVIOR == ret)
             ff_qsv_decode_reset(avctx, q);
-        }
 
         if (sync) {
 			count++;
@@ -1007,8 +1006,6 @@ void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q)
     int ret = 0;
     mfxVideoParam param = { { 0 } };
 
-    av_log(avctx, AV_LOG_INFO, "%s() requested with %s\n", __FUNCTION__, 
-        q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ? "vidmem" : "sysmem");
     if (q->reinit_pending) {
         close_decoder(q);
     } else if (q->engine_ready) {

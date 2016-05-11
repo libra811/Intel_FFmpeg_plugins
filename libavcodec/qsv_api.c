@@ -19,7 +19,7 @@
  */
 
 #include "config.h"
-
+#include "internal.h"
 #include <stddef.h>
 
 #include "libavutil/mem.h"
