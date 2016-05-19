@@ -3247,8 +3247,10 @@ static int transcode_init(void)
         if (ret < 0)
             goto dump_format;
 
-        if( vpp_ctx != NULL )
+        if( vpp_ctx != NULL ){
             av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den );
+            vpp_ctx = NULL;
+        }
     }
 #endif
 
@@ -4093,7 +4095,8 @@ static int transcode(void)
     for (i = 0; i < nb_input_streams; i++) {
         ist = input_streams[i];
         if (ist->decoding_needed) {
-            avcodec_close(ist->dec_ctx);
+            /* We'll close all codec in ffmpeg_cleanup(), so this is redundant */
+            //avcodec_close(ist->dec_ctx);
             if (ist->hwaccel_uninit)
                 ist->hwaccel_uninit(ist->dec_ctx);
         }

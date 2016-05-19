@@ -905,8 +905,14 @@ static int open_input_file(OptionsContext *o, const char *filename)
     ic->data_codec_id    = data_codec_name ?
         find_codec_or_die(data_codec_name, AVMEDIA_TYPE_DATA, 0)->id : AV_CODEC_ID_NONE;
 
-    if (video_codec_name)
+    if (video_codec_name){
         av_format_set_video_codec   (ic, find_codec_or_die(video_codec_name   , AVMEDIA_TYPE_VIDEO   , 0));
+#if CONFIG_QSV
+        if(strcmp(video_codec_name, "h264_qsv") == 0){
+            ic->flags |= AVFMT_FLAG_NOPARSE;
+        }
+#endif
+    }
     if (audio_codec_name)
         av_format_set_audio_codec   (ic, find_codec_or_die(audio_codec_name   , AVMEDIA_TYPE_AUDIO   , 0));
     if (subtitle_codec_name)
