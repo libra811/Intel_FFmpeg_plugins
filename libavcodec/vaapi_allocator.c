@@ -337,7 +337,6 @@ mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
 {
 
     vaapiMemId* vaapi_mids = NULL;
-    mfxMemId mids = NULL;
     VASurfaceID* surfaces = NULL;
     QSVContext* q;
     mfxU32 i = 0;
@@ -367,10 +366,9 @@ mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
     	    //vaDestroySurfaces(va_dpy, surfaces, response->NumFrameActual);
     	    vaDestroySurfaces(q->internal_qs.va_display, surfaces, response->NumFrameActual);
     	}
-        free(mids);
+        free(surfaces);
     	free(vaapi_mids);
         response->mids = NULL;
-        free(surfaces);
     }
 
     response->NumFrameActual = 0;

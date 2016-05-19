@@ -233,12 +233,8 @@ static void vidmem_init_surface( VPPContext *vpp)
     vpp->num_surfaces_out = FFMAX(vpp->req[1].NumFrameSuggested, 1);
 
 	if( NULL == vpp->pFrameAllocator) return ;
-    vpp->out_response = av_malloc(sizeof(mfxFrameAllocResponse));
-    memset( vpp->out_response, 0, sizeof(mfxFrameAllocResponse) );
-	
-
+    vpp->out_response = av_mallocz(sizeof(mfxFrameAllocResponse));	
     vpp->pFrameAllocator->Alloc( vpp->pFrameAllocator->pthis, &(vpp->req[1]), vpp->out_response);
-   
 	vpp->out_surface = av_mallocz(sizeof(mfxFrameSurface1) * vpp->num_surfaces_out);
     VPP_CHECK_POINTER(vpp->out_surface);
     for (int i = 0; i < vpp->num_surfaces_out; i++) {
@@ -432,13 +428,12 @@ static void vidmem_free_surface(AVFilterContext *ctx)
     VPPContext *vpp= ctx->priv;
 
 	av_log( NULL, AV_LOG_INFO, "vpp: vidmem_free_surface\n");
-    for (unsigned int i = 0; i < vpp->num_surfaces_out; i++)
-         av_free(vpp->out_surface[i]);
-
-    av_free(vpp->out_surface);
-
 	if( (NULL != vpp->pFrameAllocator) && (NULL != vpp->out_response) ){
 		vpp->pFrameAllocator->Free(vpp->pFrameAllocator->pthis, vpp->out_response);
+        av_freep(&vpp->out_response);
+        for (unsigned int i = 0; i < vpp->num_surfaces_out; i++)
+             av_freep(&vpp->out_surface[i]);
+        av_freep(&vpp->out_surface);
 	}
 
     vpp->num_surfaces_in  = 0;
@@ -620,7 +615,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
         output_get_surface( inlink, &pOutSurface );
 
 		if( !pInSurface || !pOutSurface ){
-			//av_frame_free(&picref);
+			av_frame_free(&picref);
 			av_log(ctx, AV_LOG_ERROR, "no free input or output surface\n");
 			return AVERROR(ENOMEM);
 		}
@@ -664,6 +659,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 
 
         if (ret < 0 && ret != MFX_ERR_MORE_SURFACE) {
+            av_frame_free(&out);
+            av_frame_free(&picref);
             if (ret == MFX_ERR_MORE_DATA)
                 return 0;
             av_log(ctx, AV_LOG_ERROR, "RunFrameVPPAsync %d\n", ret);
@@ -699,8 +696,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
  
         filter_frame_ret = ff_filter_frame(inlink->dst->outputs[0], out);
 
-        if (filter_frame_ret < 0)
+        if (filter_frame_ret < 0){
+            av_frame_free(&picref);
             return ret;
+        }
 
         vpp->frame_number++;
 
