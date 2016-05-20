@@ -70,8 +70,9 @@ static void free_surfaces(QSVContext *q, mfxFrameAllocResponse *resp)
         vaDestroySurfaces( q->internal_qs.va_display, surface, i );
 		
 	av_freep( &surface );
-	*/	
-	av_freep( q->work_frames );
+	*/
+    if(!q->work_frames)
+        av_freep( &q->work_frames );
 	
 	q->nb_surfaces = 0;
 }
