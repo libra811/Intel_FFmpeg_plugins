@@ -66,6 +66,7 @@ typedef struct {
     int num_surfaces_out;                           // output surfaces
 
     unsigned char * surface_buffers_out;            // output surface buffer
+    int sysmem_cur_out_idx;
 
     char *load_plugins;
 

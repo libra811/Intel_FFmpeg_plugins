@@ -63,6 +63,8 @@ typedef struct QSVContext {
     // else it is not possible to handle dynamic stream changes correctly
     // this fifo uses for input packets buffering
     AVFifoBuffer *pkt_fifo;
+    
+    AVFifoBuffer *header_fifo;
 
     // this flag indicates that header parsed,
     // decoder instance created and ready to general decoding

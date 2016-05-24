@@ -282,7 +282,13 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
         }
     }
 #endif
-    if (avpkt->size) {
+    if(q->header_fifo){
+        bs.DataLength = av_fifo_size(q->header_fifo);
+        bs.MaxLength  = bs.DataLength;
+        bs.Data = av_mallocz(bs.DataLength);
+        bs.TimeStamp  = avpkt->pts;
+        av_fifo_generic_peek(q->header_fifo, bs.Data, bs.DataLength, NULL);
+    }else if (avpkt->size) {
         bs.Data       = avpkt->data;
         bs.DataLength = avpkt->size;
         bs.MaxLength  = bs.DataLength;
@@ -293,6 +299,9 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported codec_id %08x\n", avctx->codec_id);
+        if(q->header_fifo){
+            av_freep(&bs.Data);
+        }
         return ret;
     }
 
@@ -300,13 +309,23 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 
     ret = MFXVideoDECODE_DecodeHeader(q->session, &bs, &param);
     if (MFX_ERR_MORE_DATA==ret) {
+        if(q->header_fifo){
+            av_freep(&bs.Data);
+        }
         /* this code means that header not found so we return packet size to skip
            a current packet
          */
         return avpkt->size;
     } else if (ret < 0) {
+        if(q->header_fifo){
+            av_freep(&bs.Data);
+        }
         av_log(avctx, AV_LOG_ERROR, "Decode header error %d\n", ret);
         return ff_qsv_error(ret);
+    }
+    if(q->header_fifo){
+        av_freep(&bs.Data);
+        av_fifo_freep(&q->header_fifo);
     }
     param.IOPattern   = q->iopattern;
     param.AsyncDepth  = q->async_depth;
@@ -528,6 +547,15 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 
 int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 {
+    if(!q->header_fifo){
+        q->header_fifo = av_fifo_alloc(1024*1024);
+        if(!q->header_fifo)
+            return AVERROR(ENOMEM);
+    }
+    if(av_fifo_space(q->header_fifo) < avpkt->size){
+        av_fifo_grow(q->header_fifo, 1024*1024);
+    }
+    av_fifo_generic_write(q->header_fifo, avpkt->data, avpkt->size, NULL);
 	if(NULL != q->enc_ctx){
 		return qsv_decode_init_vidmem(avctx, q, avpkt);
 	}
@@ -732,6 +760,9 @@ static void close_decoder(QSVContext *q)
 			close_decoder_sysmem(q);
 			break;
 	}
+    if(q->header_fifo){
+        av_fifo_freep(&q->header_fifo);
+    }
 }
 
 static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,

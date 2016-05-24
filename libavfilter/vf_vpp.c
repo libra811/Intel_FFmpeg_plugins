@@ -499,33 +499,47 @@ static int get_free_surface_index_in(AVFilterContext *ctx, mfxFrameSurface1 ** s
     return MFX_ERR_NOT_FOUND;
 }
 
-static int get_free_surface_index_out(AVFilterContext *ctx, mfxFrameSurface1 ** surface_pool, int pool_size)
-{
-    //VPPContext *vpp = ctx->priv;
-
-    if (surface_pool) {
-        for (mfxU16 i = 0; i < pool_size; i++)
-            if (0 == surface_pool[i]->Data.Locked)
-               return i;
-    }
-
-    av_log(ctx, AV_LOG_ERROR, "Error getting a free surface, pool size is %d\n", pool_size);
-    return MFX_ERR_NOT_FOUND;
-}
-
-static int output_get_surface( AVFilterLink *inlink, mfxFrameSurface1 **surface )
+static int sysmem_output_get_surface( AVFilterLink *inlink, mfxFrameSurface1 **surface )
 {
 	AVFilterContext *ctx = inlink->dst;
     VPPContext *vpp = ctx->priv;
-
     int out_idx = 0;
 
-    out_idx = get_free_surface_index_out(ctx, vpp->out_surface, vpp->num_surfaces_out);
+    if (vpp->out_surface) {
+        for (out_idx = vpp->sysmem_cur_out_idx; out_idx < vpp->num_surfaces_out; out_idx++)
+            if (0 == vpp->out_surface[out_idx]->Data.Locked)
+                break;
+    }else
+        return MFX_ERR_NOT_INITIALIZED;
  
- 	if ( MFX_ERR_NOT_FOUND == out_idx )
-        return out_idx;
+ 	if ( vpp->num_surfaces_out == out_idx )
+        return MFX_ERR_NOT_FOUND;
 
+    *surface = vpp->out_surface[out_idx];
+
+    vpp->sysmem_cur_out_idx = out_idx + 1;
+    if(vpp->sysmem_cur_out_idx >= vpp->num_surfaces_out)
+        vpp->sysmem_cur_out_idx = 0;
     
+	return 0;
+}
+
+static int vidmem_output_get_surface( AVFilterLink *inlink, mfxFrameSurface1 **surface )
+{
+	AVFilterContext *ctx = inlink->dst;
+    VPPContext *vpp = ctx->priv;
+    int out_idx = 0;
+
+    if (vpp->out_surface) {
+        for (out_idx = 0; out_idx < vpp->num_surfaces_out; out_idx++)
+            if (0 == vpp->out_surface[out_idx]->Data.Locked)
+                break;
+    }else
+        return MFX_ERR_NOT_INITIALIZED;
+ 
+ 	if ( vpp->num_surfaces_out == out_idx )
+        return MFX_ERR_NOT_FOUND;
+
     *surface = vpp->out_surface[out_idx];
     
 	return 0;
@@ -608,11 +622,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 
 		if( NULL != vpp->pFrameAllocator){
 			vidmem_input_get_surface( inlink, picref, &pInSurface );
+            vidmem_output_get_surface( inlink, &pOutSurface );
 		}else{
 			sysmem_input_get_surface( inlink, picref, &pInSurface );
+            sysmem_output_get_surface( inlink, &pOutSurface );
 		}
 
-        output_get_surface( inlink, &pOutSurface );
 
 		if( !pInSurface || !pOutSurface ){
 			av_frame_free(&picref);
@@ -728,6 +743,8 @@ static av_cold int vpp_init(AVFilterContext *ctx)
     vpp->frame_number = 0;
     vpp->pFrameAllocator = NULL;
 	vpp->vpp_ready = 0;
+    vpp->sysmem_cur_out_idx = 0;
+
     return 0;
 }
 
