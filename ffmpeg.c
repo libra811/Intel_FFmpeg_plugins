@@ -69,7 +69,9 @@
 # include "libavfilter/buffersrc.h"
 # include "libavfilter/buffersink.h"
 
+#if CONFIG_QSV
 #include "libavcodec/qsv.h"
+#endif
 
 #if HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
@@ -3209,20 +3211,22 @@ static int transcode_init(void)
     /* open each encoder */
     for (i = 0; i < nb_output_streams; i++) {
         ost = output_streams[i];
-        ist = input_streams[i];
-        if((strcmp( ist->dec->name, "h264_qsv") == 0) 
+        ist = get_input_stream(ost);
+        if(ist && ((strcmp( ist->dec->name, "h264_qsv") == 0) 
            || (strcmp( ist->dec->name, "hevc_qsv") == 0)
            || (strcmp( ist->dec->name, "mpeg2_qsv") == 0)
-           || (strcmp(ist->dec->name, "vc1_qsv") == 0))
+           || (strcmp(ist->dec->name, "vc1_qsv") == 0)))
         {    
             int vpp_type = AVFILTER_NONE;
+            struct FilterGraph *fg;
+            fg = ost->filter->graph;
      
             //there will be 4 filters (NULL, format, input & output) default added in graph if no filter added in command line. null will be replaced if specify 
             //filter in ffmpeg options. so use the following logical to check whether only vpp inserted or not. be changed with better check condition.
-            if(filtergraphs[i]->graph->nb_filters > 4)
+            if(fg->graph->nb_filters > 4)
                 vpp_type = AVFILTER_MORE;
 
-            if(filtergraphs[i]->graph->nb_filters == 4){
+            if(fg->graph->nb_filters == 4){
                 if(strcmp(ist->filters[0]->name, "vpp") == 0){
                     vpp_type = AVFILTER_VPP_ONLY;
                 }else{
@@ -3231,14 +3235,14 @@ static int transcode_init(void)
                 if(strcmp(ist->filters[0]->name, "null") == 0)
                     vpp_type = AVFILTER_NONE;
             }    
-            av_log(NULL, AV_LOG_INFO, "filters = %d type = %d filter_name =%s \n", filtergraphs[i]->graph->nb_filters, vpp_type,  ist->filters[0]->name);
-            for( int k = 0; k <  filtergraphs[i]->graph->nb_filters; k++){
-                av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  filtergraphs[i]->graph->filters[k]->name );
+            av_log(NULL, AV_LOG_INFO, "filters = %d type = %d filter_name =%s \n", fg->graph->nb_filters, vpp_type, ist->filters[0]->name);
+            for( int k = 0; k <  fg->graph->nb_filters; k++){
+                av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  fg->graph->filters[k]->name );
             }
             av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
 
             if( AVFILTER_VPP_ONLY == vpp_type ){
-                vpp_ctx = avfilter_graph_get_filter(filtergraphs[i]->graph, "Parsed_vpp_0" );
+                vpp_ctx = avfilter_graph_get_filter(fg->graph, "Parsed_vpp_0" );
                 av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
             }
         }

@@ -831,7 +831,7 @@ static int open_input_file(OptionsContext *o, const char *filename)
     InputFile *f;
     AVFormatContext *ic;
     AVInputFormat *file_iformat = NULL;
-    int err, i, ret;
+    int err, i, ret, retry_count = 0;
     int64_t timestamp;
     AVDictionary **opts;
     AVDictionary *unused_opts = NULL;
@@ -856,12 +856,6 @@ static int open_input_file(OptionsContext *o, const char *filename)
     stdin_interaction &= strncmp(filename, "pipe:", 5) &&
                          strcmp(filename, "/dev/stdin");
 
-    /* get default parameters from command line */
-    ic = avformat_alloc_context();
-    if (!ic) {
-        print_error(filename, AVERROR(ENOMEM));
-        exit_program(1);
-    }
     if (o->nb_audio_sample_rate) {
         av_dict_set_int(&o->g->format_opts, "sample_rate", o->audio_sample_rate[o->nb_audio_sample_rate - 1].u.i, 0);
     }
@@ -890,6 +884,14 @@ static int open_input_file(OptionsContext *o, const char *filename)
     }
     if (o->nb_frame_pix_fmts)
         av_dict_set(&o->g->format_opts, "pixel_format", o->frame_pix_fmts[o->nb_frame_pix_fmts - 1].u.str, 0);
+
+again:
+    /* get default parameters from command line */
+    ic = avformat_alloc_context();
+    if (!ic) {
+        print_error(filename, AVERROR(ENOMEM));
+        exit_program(1);
+    }
 
     MATCH_PER_TYPE_OPT(codec_names, str,    video_codec_name, ic, "v");
     MATCH_PER_TYPE_OPT(codec_names, str,    audio_codec_name, ic, "a");
@@ -951,6 +953,8 @@ static int open_input_file(OptionsContext *o, const char *filename)
     ret = avformat_find_stream_info(ic, opts);
     if (ret < 0) {
         av_log(NULL, AV_LOG_FATAL, "%s: could not find codec parameters\n", filename);
+        if(retry_count++ < 3)
+            goto again;
         if (ic->nb_streams == 0) {
             avformat_close_input(&ic);
             exit_program(1);
