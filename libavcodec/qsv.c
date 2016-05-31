@@ -174,11 +174,18 @@ int ff_qsv_init_internal_session(AVCodecContext *avctx, QSVSession *qs,
 {
     mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
     mfxVersion ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+    mfxInitParam initParam;
 
     const char *desc;
     int ret;
 
-    ret = MFXInit(impl, &ver, &qs->session);
+    qs->session = NULL;
+    //ret = MFXInit(impl, &ver, &qs->session);
+    memset(&initParam, 0, sizeof(initParam));
+    initParam.Implementation = impl;
+    initParam.Version = ver;
+    initParam.GPUCopy = MFX_GPUCOPY_OFF;
+    ret = MFXInitEx(initParam, &qs->session);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");
         return ff_qsv_error(ret);
