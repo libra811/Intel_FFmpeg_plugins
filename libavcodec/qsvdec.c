@@ -87,20 +87,11 @@ static int alloc_frame(AVCodecContext *avctx, QSVFrame *frame)
 
     if (frame->frame->format == AV_PIX_FMT_QSV) {
         frame->surface = (mfxFrameSurface1*)frame->frame->data[3];
-	    av_log(NULL, AV_LOG_INFO, "Pixel format is AV_PIX_FMT_QSV\n" );
+	    av_log(NULL, AV_LOG_DEBUG, "Pixel format is AV_PIX_FMT_QSV\n" );
     } else {
-        frame->surface_internal.Info.BitDepthLuma   = 8;
-        frame->surface_internal.Info.BitDepthChroma = 8;
-        frame->surface_internal.Info.FourCC         = MFX_FOURCC_NV12;
-        frame->surface_internal.Info.Width          = avctx->coded_width;
-        frame->surface_internal.Info.Height         = avctx->coded_height;
-        frame->surface_internal.Info.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
-
         frame->surface_internal.Data.PitchLow = frame->frame->linesize[0];
         frame->surface_internal.Data.Y        = frame->frame->data[0];
         frame->surface_internal.Data.UV       = frame->frame->data[1];
-
-        frame->surface = &frame->surface_internal;
     }
 
     return 0;
@@ -254,10 +245,11 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 {
     mfxVideoParam param = { { 0 } };
     mfxBitstream bs   = { { { 0 } } };
-    int ret;
+    int ret, idx = 0;
     enum AVPixelFormat pix_fmts[3] = { AV_PIX_FMT_QSV,
                                        AV_PIX_FMT_NV12,
                                        AV_PIX_FMT_NONE };
+    QSVFrame *cur = NULL, *first = NULL;
 
     av_log(avctx, AV_LOG_INFO,"*******ff_qsv_decode_init_sysmem**********\n");
     q->iopattern  = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
@@ -285,7 +277,7 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     if(q->header_fifo){
         bs.DataLength = av_fifo_size(q->header_fifo);
         bs.MaxLength  = bs.DataLength;
-        bs.Data = av_mallocz(bs.DataLength);
+        bs.Data       = av_mallocz(bs.DataLength);
         bs.TimeStamp  = avpkt->pts;
         av_fifo_generic_peek(q->header_fifo, bs.Data, bs.DataLength, NULL);
     }else if (avpkt->size) {
@@ -334,6 +326,29 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     param.mfx.FrameInfo.BitDepthLuma   = 8;
     param.mfx.FrameInfo.BitDepthChroma = 8;
 
+    if(!q->request)
+        q->request = av_mallocz(sizeof(mfxFrameAllocRequest));
+
+    ret = MFXVideoDECODE_QueryIOSurf( q->session, &param, q->request );
+    if( ret < 0 ){
+        av_log(avctx, AV_LOG_ERROR, "QueryIOSurf failed with return %d\n", ret);
+        return ff_qsv_error( ret );
+    }
+
+	av_log(avctx, AV_LOG_INFO, "DECODE: QueryIOSurf ret=%d W=%d H=%d FourCC=%08x "
+            "NumFrameSuggested=%d\n", ret, q->request->Info.Width, q->request->Info.Height,
+            q->request->Info.FourCC, q->request->NumFrameSuggested);
+
+    while(idx++ < q->request->NumFrameSuggested){
+        cur = av_mallocz(sizeof(*cur));
+        cur->surface = &cur->surface_internal;
+        memcpy(&cur->surface->Info, &param.mfx.FrameInfo, sizeof(cur->surface->Info));
+        cur->frame = av_frame_alloc();
+        cur->next = first;
+        first = cur;
+    }
+    q->work_frames = first;
+
     ret = MFXVideoDECODE_Init(q->session, &param);
     if (ret < 0) {
         if (MFX_ERR_INVALID_VIDEO_PARAM==ret) {
@@ -363,8 +378,7 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
        So weare  pre-allocating fifo big enough for 17 elements:
      */
     if (!q->async_fifo) {
-        q->async_fifo = av_fifo_alloc((1 + 16) *
-                                      (sizeof(mfxSyncPoint) + sizeof(QSVFrame*)));
+        q->async_fifo = av_fifo_alloc((1 + 16) * sizeof(QSVFrame*));
         if (!q->async_fifo)
             return AVERROR(ENOMEM);
     }
@@ -457,10 +471,11 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     param.mfx.FrameInfo.BitDepthChroma = 8;
     
     //Added by GY: alloc surfaces for decoder
-	q->request = av_mallocz(sizeof(mfxFrameAllocRequest));
-	q->response = av_malloc(sizeof(mfxFrameAllocResponse));
-    memset( q->request, 0, sizeof(mfxFrameAllocRequest) );
-    memset( q->response, 0, sizeof(mfxFrameAllocResponse) );
+    if(!q->request)
+        q->request = av_mallocz(sizeof(mfxFrameAllocRequest));
+    
+    if(!q->response)
+        q->response = av_mallocz(sizeof(mfxFrameAllocResponse));
 
     ret = MFXVideoDECODE_QueryIOSurf( q->session, &param, q->request );
     if( ret < 0 ){
@@ -521,8 +536,7 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
        So weare  pre-allocating fifo big enough for 17 elements:
      */
     if (!q->async_fifo) {
-        q->async_fifo = av_fifo_alloc((1 + 16) *
-                                      (sizeof(mfxSyncPoint) + sizeof(QSVFrame*)));
+        q->async_fifo = av_fifo_alloc((1 + 16) * sizeof(QSVFrame*));
         if (!q->async_fifo)
             return AVERROR(ENOMEM);
     }
@@ -563,31 +577,17 @@ int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 	return qsv_decode_init_sysmem(avctx, q, avpkt);
 }
 
-static void qsv_clear_unused_frames(QSVContext *q)
-{
-    //printf("qsv_clear_unused_frames now!!!\n");
-
-    QSVFrame *cur = q->work_frames;
-    while (cur) {
-        if (cur->surface && !cur->surface->Data.Locked && !cur->queued) {
-            cur->surface = NULL;
-            av_frame_unref(cur->frame);
-        }
-        cur = cur->next;
-    }
-}
-
 static int get_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurface1 **surf)
 {
-    QSVFrame *frame, **last;
+    QSVFrame *frame;
     int ret;
 
-    qsv_clear_unused_frames(q);
-
     frame = q->work_frames;
-    last  = &q->work_frames;
     while (frame) {
-        if (!frame->surface) {
+        /*av_log(avctx, AV_LOG_DEBUG, "frame status: locked = %d, queued = %d.\n",
+                frame->surface->Data.Locked, frame->queued);*/
+        if (!frame->surface->Data.Locked && !frame->queued) {
+            av_frame_unref(frame->frame);
             ret = alloc_frame(avctx, frame);
             if (ret < 0)
                 return ret;
@@ -595,27 +595,10 @@ static int get_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurface1 **
             return 0;
         }
 
-        last  = &frame->next;
         frame = frame->next;
     }
 
-    frame = av_mallocz(sizeof(*frame));
-    if (!frame)
-        return AVERROR(ENOMEM);
-    frame->frame = av_frame_alloc();
-    if (!frame->frame) {
-        av_freep(&frame);
-        return AVERROR(ENOMEM);
-    }
-    *last = frame;
-
-    ret = alloc_frame(avctx, frame);
-    if (ret < 0)
-        return ret;
-
-    *surf = frame->surface;
-
-    return 0;
+    return -1;
 }
 
 //add this functions to allocate more surface dynamically when video_memory is used 
@@ -769,12 +752,12 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
                   AVFrame *frame, int *got_frame,
                   AVPacket *avpkt)
 {
-   	QSVFrame *out_frame;
-	mfxFrameSurface1* insurface;
-	mfxFrameSurface1* outsurface;
-	mfxSyncPoint sync;
+   	QSVFrame *out_frame = NULL;
+	mfxFrameSurface1* insurface = NULL;
+	mfxFrameSurface1* outsurface = NULL;
+	mfxSyncPoint sync = NULL;
 	
-    static int count =0;
+    //static int count =0;
     mfxBitstream bs = { { { 0 } } };
     int ret;
     int n_out_frames;
@@ -786,6 +769,7 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
         if (ret)
             return ret;
     }
+
     if (!flush) {
         if (av_fifo_size(q->input_fifo)) {
             /* we have got rest of previous packet into buffer */
@@ -805,21 +789,24 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
         bs.MaxLength  = bs.DataLength;
         bs.TimeStamp  = avpkt->pts;
     }
-    //bs.TimeStamp = 0;	
+
     while (1) {
 		switch(q->iopattern){
-		case MFX_IOPATTERN_OUT_VIDEO_MEMORY:
-            ret = get_free_surface(avctx, q, &insurface);
-			break;
-		case MFX_IOPATTERN_OUT_SYSTEM_MEMORY:
-		default:
-            ret = get_surface(avctx, q, &insurface);
-			break;
+            case MFX_IOPATTERN_OUT_VIDEO_MEMORY:
+                ret = get_free_surface(avctx, q, &insurface);
+                break;
+            case MFX_IOPATTERN_OUT_SYSTEM_MEMORY:
+            default:
+                ret = get_surface(avctx, q, &insurface);
+                break;
 	    }
 
-        if (ret < 0)
-            return ret;
-	
+        if (ret < 0 || !insurface){
+            av_log(avctx, AV_LOG_WARNING, "get_surface() failed.\n");
+            ret = 0;
+            break;
+        }
+
 //      printf("DECODE: surface info: width=%d height=%d %d %d %d %d\n", 
 //                      insurface->Info.Width, 
 //                      insurface->Info.Height, 
@@ -849,20 +836,19 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
             }
 	        av_usleep(500);
 		} while (1);
-
 	    //av_log(avctx, AV_LOG_ERROR, "DecodeFrameAsync return %d, offset=%d\n", ret, bs.DataOffset);
 
         if (MFX_WRN_VIDEO_PARAM_CHANGED==ret) {
         /* TODO: handle here minor sequence header changing */
         } else if (MFX_ERR_INCOMPATIBLE_VIDEO_PARAM==ret) {
-               av_fifo_reset(q->input_fifo);
-               flush = q->reinit_pending = 1;
-               continue;
+            av_fifo_reset(q->input_fifo);
+            flush = q->reinit_pending = 1;
+            continue;
         } else if (MFX_ERR_UNDEFINED_BEHAVIOR == ret)
             ff_qsv_decode_reset(avctx, q);
 
         if (sync) {
-			count++;
+			//count++;
 			out_frame = find_frame( q, outsurface );
             if (!out_frame) {
                 av_log(avctx, AV_LOG_ERROR,
@@ -871,8 +857,8 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
             }
 
 			out_frame->queued = 1;
+            out_frame->sync_point = sync;
 			av_fifo_generic_write(q->async_fifo, &(out_frame), sizeof(out_frame), NULL);
-			av_fifo_generic_write(q->async_fifo, &(sync), sizeof(sync), NULL);
             //printf("->>>>>>>>>out_frame = %p surface = %p, locked=%d count = %d\n",out_frame, outsurface, outsurface->Data.Locked,count);
             continue;
         }
@@ -883,13 +869,12 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
 
     /* make sure we do not enter an infinite loop if the SDK
      * did not consume any data and did not return anything */
-    if (!sync && !bs.DataOffset && !flush) {
+    if (ret < 0 && !sync && !bs.DataOffset && !flush) {
         //av_log(avctx, AV_LOG_WARNING, "A decode call did not consume any data\n");
         bs.DataOffset = avpkt->size;
     }
 
-    if (buffered) 
-    {
+    if (buffered) {
         qsv_fifo_relocate(q->input_fifo, bs.DataOffset);
     } else if (bs.DataOffset!=avpkt->size) {
 		/* some data of packet was not consumed. store it to local buffer */
@@ -898,42 +883,33 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
 
     if (MFX_ERR_MORE_DATA!=ret && ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error %d during QSV decoding.\n", ret);
-        return ff_qsv_error(ret);
+        //return ff_qsv_error(ret);
     }
-    
-    n_out_frames = av_fifo_size(q->async_fifo) / (sizeof(out_frame) + sizeof(sync));
-   
-    //if (n_out_frames > q->async_depth || (flush && n_out_frames) ){ 
+
+    n_out_frames = av_fifo_size(q->async_fifo) / sizeof(out_frame);
     if( n_out_frames != 0 ){
 		AVFrame *src_frame;
 		av_fifo_generic_read(q->async_fifo, &(out_frame), sizeof(out_frame), NULL);
-        av_fifo_generic_read(q->async_fifo, &(sync),      sizeof(sync),      NULL);
 		out_frame->queued = 0;
 		
-        MFXVideoCORE_SyncOperation(q->session, sync, 60000);
-    
+        MFXVideoCORE_SyncOperation(q->session, out_frame->sync_point, 60000);
 
 		switch(q->iopattern){
-		case MFX_IOPATTERN_OUT_VIDEO_MEMORY:
-    	    frame->data[3] = (void*) out_frame->surface;
-			break;
-		case MFX_IOPATTERN_OUT_SYSTEM_MEMORY:
-		default:
-			src_frame = out_frame->frame;
-			ret = av_frame_ref(frame, src_frame);
-			if( ret < 0 ) return ret;
-			break;
+            case MFX_IOPATTERN_OUT_VIDEO_MEMORY:
+                frame->data[3] = (void*) out_frame->surface;
+                break;
+            case MFX_IOPATTERN_OUT_SYSTEM_MEMORY:
+            default:
+                src_frame = out_frame->frame;
+                ret = av_frame_ref(frame, src_frame);
+                if( ret < 0 ) return ret;
+                break;
 	    }
 
-	    frame->width = avctx->width;
-    	frame->height = avctx->height;
-
-    	frame->format = avctx->pix_fmt;
-        //printf("DECODE: %d:%s surface=%p MemId=%p\n\n",__LINE__,__func__,out_frame->surface,out_frame->surface->Data.MemId);
-        frame->pkt_pts = frame->pts = out_frame->surface->Data.TimeStamp;
-		//av_log(avctx, AV_LOG_INFO, "frame pts = %f, pkt dts=%f\n", out_frame->surface->Data.TimeStamp, avpkt->pts );
-	
-
+	    frame->width       = avctx->width;
+    	frame->height      = avctx->height;
+    	frame->format      = avctx->pix_fmt;
+        frame->pkt_pts     = frame->pts = out_frame->surface->Data.TimeStamp;
         frame->repeat_pict =
             out_frame->surface->Info.PicStruct & MFX_PICSTRUCT_FRAME_TRIPLING ? 4 :
             out_frame->surface->Info.PicStruct & MFX_PICSTRUCT_FRAME_DOUBLING ? 2 :
@@ -944,7 +920,7 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
             !(out_frame->surface->Info.PicStruct & MFX_PICSTRUCT_PROGRESSIVE);
 
         *got_frame = 1;
-		count--;
+		//count--;
     }
 
     av_log(avctx, AV_LOG_DEBUG, "do_qsv_decode: frame=%p size=%dB got_frame=%d\n", frame, avpkt->size, *got_frame);

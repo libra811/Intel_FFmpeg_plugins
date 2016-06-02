@@ -368,6 +368,7 @@ mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
     	}
         free(surfaces);
     	free(vaapi_mids);
+        free(response->mids);
         response->mids = NULL;
     }
 
