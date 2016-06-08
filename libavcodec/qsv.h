@@ -22,6 +22,11 @@
 #define AVCODEC_QSV_H
 
 #include <mfx/mfxvideo.h>
+#include "libavfilter/avfilter.h"
+
+#define AVFILTER_NONE     0
+#define AVFILTER_VPP_ONLY 1
+#define AVFILTER_MORE     2
 
 typedef struct AVQSVContext {
     mfxSession session;
@@ -37,5 +42,8 @@ typedef struct AVQSVContext {
  * It must be freed by the caller with av_free().
  */
 AVQSVContext *av_qsv_alloc_context(void);
+int av_qsv_pipeline_connect_codec( AVCodecContext *av_dec_ctx, AVCodecContext *av_enc_ctx, int vpp_type );
+int av_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp_ctx );
+int av_qsv_pipeline_config_vpp(AVCodecContext *dec_ctx, AVFilterContext *vpp_ctx, int frame_rate_num, int frame_rate_den);
 
 #endif /* AVCODEC_QSV_H */

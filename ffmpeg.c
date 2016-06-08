@@ -66,6 +66,9 @@
 # include "libavfilter/avfilter.h"
 # include "libavfilter/buffersrc.h"
 # include "libavfilter/buffersink.h"
+#if CONFIG_QSV
+#include "libavcodec/qsv.h"
+#endif
 
 #if HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
@@ -2568,6 +2571,9 @@ static int transcode_init(void)
     InputStream *ist;
     char error[1024] = {0};
     int want_sdp = 1;
+#if CONFIG_QSV
+    AVFilterContext *vpp_ctx = NULL;
+#endif
 
     for (i = 0; i < nb_filtergraphs; i++) {
         FilterGraph *fg = filtergraphs[i];
@@ -3006,6 +3012,7 @@ static int transcode_init(void)
         }
     }
 
+#if !CONFIG_QSV
     /* open each encoder */
     for (i = 0; i < nb_output_streams; i++) {
         ost = output_streams[i];
@@ -3074,6 +3081,113 @@ static int transcode_init(void)
             }
             goto dump_format;
         }
+#else
+    /* init input streams */
+    for (i = 0; i < nb_input_streams; i++)
+        if ((ret = init_input_stream(i, error, sizeof(error))) < 0) {
+//            for (i = 0; i < nb_output_streams; i++) {
+//                ost = output_streams[i];
+//                avcodec_close(ost->enc_ctx);
+//            }
+            goto dump_format;
+        }
+    
+    /* open each encoder */
+    for (i = 0; i < nb_output_streams; i++) {
+        ost = output_streams[i];
+        if (ost->encoding_needed) {
+            AVCodec      *codec = ost->enc;
+            AVCodecContext *dec = NULL;
+
+            if ((ist = get_input_stream(ost))){
+                dec = ist->dec_ctx;
+                if((strcmp( ist->dec->name, "h264_qsv") == 0)
+                   || (strcmp( ist->dec->name, "hevc_qsv") == 0)
+                   || (strcmp( ist->dec->name, "mpeg2_qsv") == 0)
+                   || (strcmp(ist->dec->name, "vc1_qsv") == 0)){
+                    int vpp_type = AVFILTER_NONE;
+                    struct FilterGraph *fg;
+                    fg = ost->filter->graph;
+                    if(fg->graph->nb_filters > 4)
+                        vpp_type = AVFILTER_MORE;
+
+                    if(fg->graph->nb_filters == 4){
+                        if(strcmp(ist->filters[0]->name, "vpp") == 0)
+                            vpp_type = AVFILTER_VPP_ONLY;
+                        else
+                            vpp_type = AVFILTER_MORE;
+
+                        if(strcmp(ist->filters[0]->name, "null") == 0)
+                            vpp_type = AVFILTER_NONE;
+                    }
+                    av_log(NULL, AV_LOG_INFO, "filters = %d type = %d filter_name =%s \n", fg->graph->nb_filters, vpp_type, ist->filters[0]->name);
+
+                    for( int k = 0; k <  fg->graph->nb_filters; k++)
+                        av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  fg->graph->filters[k]->name );
+
+                    av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
+
+                    if( AVFILTER_VPP_ONLY == vpp_type ){
+                        vpp_ctx = avfilter_graph_get_filter(fg->graph, "Parsed_vpp_0" );
+                        av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
+                    }
+                }
+            }
+
+            if (dec && dec->subtitle_header) {
+                /* ASS code assumes this buffer is null terminated so add extra byte. */
+                ost->enc_ctx->subtitle_header = av_mallocz(dec->subtitle_header_size + 1);
+                if (!ost->enc_ctx->subtitle_header) {
+                    ret = AVERROR(ENOMEM);
+                    goto dump_format;
+                }
+                memcpy(ost->enc_ctx->subtitle_header, dec->subtitle_header, dec->subtitle_header_size);
+                ost->enc_ctx->subtitle_header_size = dec->subtitle_header_size;
+            }
+            if (!av_dict_get(ost->encoder_opts, "threads", NULL, 0))
+                av_dict_set(&ost->encoder_opts, "threads", "auto", 0);
+            av_dict_set(&ost->encoder_opts, "side_data_only_packets", "1", 0);
+
+            if ((ret = avcodec_open2(ost->enc_ctx, codec, &ost->encoder_opts)) < 0) {
+                if (ret == AVERROR_EXPERIMENTAL)
+                    abort_codec_experimental(codec, 1);
+                snprintf(error, sizeof(error), "Error while opening encoder for output stream #%d:%d - maybe incorrect parameters such as bit_rate, rate, width or height",
+                        ost->file_index, ost->index);
+                goto dump_format;
+            }
+            if (ost->enc->type == AVMEDIA_TYPE_AUDIO &&
+                !(ost->enc->capabilities & CODEC_CAP_VARIABLE_FRAME_SIZE))
+                av_buffersink_set_frame_size(ost->filter->filter,
+                                             ost->enc_ctx->frame_size);
+            assert_avoptions(ost->encoder_opts);
+            if (ost->enc_ctx->bit_rate && ost->enc_ctx->bit_rate < 1000)
+                av_log(NULL, AV_LOG_WARNING, "The bitrate parameter is set too low."
+                                             " It takes bits/s as argument, not kbits/s\n");
+        } else {
+            ret = av_opt_set_dict(ost->enc_ctx, &ost->encoder_opts);
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_FATAL,
+                    "Error setting up codec context options.\n");
+                return ret;
+            }
+        }
+
+        ret = avcodec_copy_context(ost->st->codec, ost->enc_ctx);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_FATAL,
+                   "Error initializing the output stream codec context.\n");
+            exit_program(1);
+        }
+        ost->st->codec->codec= ost->enc_ctx->codec;
+
+        // copy timebase while removing common factors
+        ost->st->time_base = av_add_q(ost->enc_ctx->time_base, (AVRational){0, 1});
+        if( vpp_ctx != NULL ){
+            av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den );
+            vpp_ctx = NULL;
+        }
+    }
+#endif
 
     /* discard unused programs */
     for (i = 0; i < nb_input_files; i++) {
@@ -3900,7 +4014,9 @@ static int transcode(void)
     for (i = 0; i < nb_input_streams; i++) {
         ist = input_streams[i];
         if (ist->decoding_needed) {
+#if !CONFIG_QSV
             avcodec_close(ist->dec_ctx);
+#endif
             if (ist->hwaccel_uninit)
                 ist->hwaccel_uninit(ist->dec_ctx);
         }
