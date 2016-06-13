@@ -51,32 +51,6 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format)
     }
 }
 
-static int av_fifo_generic_peek(AVFifoBuffer *f, void *dest, int buf_size,
-                         void (*func)(void *, void *, int))
-{
-// Read memory barrier needed for SMP here in theory
-    uint8_t *rptr = f->rptr;
-    uint32_t rndx = f->rndx;
-
-    do {
-        int len = FFMIN(f->end - f->rptr, buf_size);
-        if (func)
-            func(dest, f->rptr, len);
-        else {
-            memcpy(dest, f->rptr, len);
-            dest = (uint8_t *)dest + len;
-        }
-// memory barrier needed for SMP here in theory
-        av_fifo_drain(f, len);
-        buf_size -= len;
-    } while (buf_size > 0);
-
-    f->rptr = rptr;
-    f->rndx = rndx;
-
-    return 0;
-}
-
 static void free_surfaces(QSVContext *q, mfxFrameAllocResponse *resp)
 {
 	//surface will be freed when decoder closed
@@ -277,13 +251,7 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     av_log(avctx, AV_LOG_INFO,"*******ff_qsv_decode_init_sysmem**********\n");
     q->iopattern  = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
 
-    if(q->header_fifo){
-        bs.DataLength = av_fifo_size(q->header_fifo);
-        bs.MaxLength  = bs.DataLength;
-        bs.Data       = av_mallocz(bs.DataLength);
-        bs.TimeStamp  = avpkt->pts;
-        av_fifo_generic_peek(q->header_fifo, bs.Data, bs.DataLength, NULL);
-    }else if (avpkt->size) {
+    if (avpkt->size) {
         bs.Data       = avpkt->data;
         bs.DataLength = avpkt->size;
         bs.MaxLength  = bs.DataLength;
@@ -294,9 +262,6 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported codec_id %08x\n", avctx->codec_id);
-        if(q->header_fifo){
-            av_freep(&bs.Data);
-        }
         return ret;
     }
 
@@ -304,23 +269,13 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 
     ret = MFXVideoDECODE_DecodeHeader(q->session, &bs, &param);
     if (MFX_ERR_MORE_DATA==ret) {
-        if(q->header_fifo){
-            av_freep(&bs.Data);
-        }
         /* this code means that header not found so we return packet size to skip
            a current packet
          */
         return avpkt->size;
     } else if (ret < 0) {
-        if(q->header_fifo){
-            av_freep(&bs.Data);
-        }
         av_log(avctx, AV_LOG_ERROR, "Decode header error %d\n", ret);
         return ff_qsv_error(ret);
-    }
-    if(q->header_fifo){
-        av_freep(&bs.Data);
-        av_fifo_freep(&q->header_fifo);
     }
     param.IOPattern   = q->iopattern;
     param.AsyncDepth  = q->async_depth;
@@ -541,15 +496,6 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 
 int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 {
-    if(!q->header_fifo){
-        q->header_fifo = av_fifo_alloc(1024*1024);
-        if(!q->header_fifo)
-            return AVERROR(ENOMEM);
-    }
-    if(av_fifo_space(q->header_fifo) < avpkt->size){
-        av_fifo_grow(q->header_fifo, 1024*1024);
-    }
-    av_fifo_generic_write(q->header_fifo, avpkt->data, avpkt->size, NULL);
 	if(NULL != q->enc_ctx){
 		return qsv_decode_init_vidmem(avctx, q, avpkt);
 	}
@@ -590,16 +536,6 @@ static int get_free_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurfac
 		cur_frames = q->work_frames;
 		while(NULL != cur_frames){
 			if( !(cur_frames->surface->Data.Locked) && !cur_frames->queued ){
-               /*   av_log( NULL, AV_LOG_INFO, "selected free surface=%p, NumExtParam=%d, width=%d, height=%d, PitchHigh=%d, PitchLow=%d, Y=%p, UV=%p, corrupted=%d \n",
-					                       cur_frames->surface->Data.MemId,
-										   cur_frames->surface->Data.NumExtParam,
-										   cur_frames->surface->Info.Width, 
-										   cur_frames->surface->Info.Height,
-										   cur_frames->surface->Data.PitchHigh,
-										   cur_frames->surface->Data.PitchLow,
-										   cur_frames->surface->Data.Y,
-										   cur_frames->surface->Data.UV,
-										   cur_frames->surface->Data.Corrupted);*/
                 *surf = (cur_frames->surface);
 				break;
 			}
@@ -709,9 +645,6 @@ static void close_decoder(QSVContext *q)
 			close_decoder_sysmem(q);
 			break;
 	}
-    if(q->header_fifo){
-        av_fifo_freep(&q->header_fifo);
-    }
 }
 
 static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
@@ -768,7 +701,7 @@ static int do_qsv_decode(AVCodecContext *avctx, QSVContext *q,
 	    }
 
         if (ret < 0 || !insurface){
-            av_log(avctx, AV_LOG_WARNING, "get_surface() failed.\n");
+            av_log(avctx, AV_LOG_DEBUG, "get_surface() failed.\n");
             ret = 0;
             break;
         }

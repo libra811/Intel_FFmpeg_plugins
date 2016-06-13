@@ -130,6 +130,13 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
 
         } else {
             /* no annex-b prefix. try to restore: */
+            /* Copy avctx->extradata to avctx_internal, because bsf will change extradata.*/
+            if (!s->avctx_internal->extradata && avctx->extradata) {
+                s->avctx_internal->extradata = av_mallocz(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+                memcpy(s->avctx_internal->extradata, avctx->extradata,
+                       avctx->extradata_size);
+                s->avctx_internal->extradata_size = avctx->extradata_size;
+            }
             ret = av_bitstream_filter_filter(s->bsf, s->avctx_internal, "private_spspps_buf",
                                          &p_filtered, &n_filtered,
                                          avpkt->data, avpkt->size, 0);
