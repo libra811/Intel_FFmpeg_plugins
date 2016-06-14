@@ -265,6 +265,7 @@ static int sysmem_input_get_surface( AVFilterLink *inlink, AVFrame* picref, mfxF
     if ( MFX_ERR_NOT_FOUND == in_idx )
         return in_idx;
 
+    vpp->in_surface[in_idx]->Data.TimeStamp = av_rescale_q(picref->pts, inlink->time_base, (AVRational){1, 90000});
     if (inlink->format == AV_PIX_FMT_NV12) {
         vpp->in_surface[in_idx]->Data.Y = picref->data[0];
         vpp->in_surface[in_idx]->Data.VU = picref->data[1];
@@ -435,7 +436,7 @@ static int initial_vpp( VPPContext *vpp )
 		memset(&vpp->frc_conf, 0, sizeof(mfxExtVPPFrameRateConversion));
 		vpp->frc_conf.Header.BufferId = MFX_EXTBUFF_VPP_FRAME_RATE_CONVERSION;
 		vpp->frc_conf.Header.BufferSz = sizeof(mfxExtVPPFrameRateConversion);
-		vpp->frc_conf.Algorithm 	  = MFX_FRCALGM_PRESERVE_TIMESTAMP; // make optional
+		vpp->frc_conf.Algorithm 	  = MFX_FRCALGM_DISTRIBUTED_TIMESTAMP; // make optional
 	
 		vpp->pVppParam->ExtParam[vpp->pVppParam->NumExtParam++] = (mfxExtBuffer*)&(vpp->frc_conf);
 	}
@@ -771,7 +772,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 
         out->interlaced_frame = vpp->dpic == 1 || vpp->dpic == 3;
         out->top_field_first  = vpp->dpic == 1;
-        out->pts = av_rescale_q(vpp->frame_number,  av_inv_q(vpp->framerate), outlink->time_base);
+        if(pOutSurface->Data.TimeStamp == MFX_TIMESTAMP_UNKNOWN)
+            out->pts = AV_NOPTS_VALUE;
+        else
+            out->pts = av_rescale_q(pOutSurface->Data.TimeStamp, (AVRational){1, 90000}, outlink->time_base);
         /*For video mem, we use AVFrame->data[3] to transfer surface*/
         if( NULL != vpp->pFrameAllocator)
     	    out->data[3] = (void*) pOutSurface;
