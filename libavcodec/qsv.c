@@ -30,6 +30,8 @@
 #include "avcodec.h"
 #include "qsv_internal.h"
 
+int g_gpucopy_mode = MFX_GPUCOPY_OFF;
+
 int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id)
 {
     switch (codec_id) {
@@ -184,7 +186,7 @@ int ff_qsv_init_internal_session(AVCodecContext *avctx, QSVSession *qs,
     memset(&initParam, 0, sizeof(initParam));
     initParam.Implementation = impl;
     initParam.Version = ver;
-    initParam.GPUCopy = MFX_GPUCOPY_OFF;
+    initParam.GPUCopy = g_gpucopy_mode = (g_gpucopy_mode == MFX_GPUCOPY_ON ? g_gpucopy_mode : qs->gpu_copy);
     ret = MFXInitEx(initParam, &qs->session);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");

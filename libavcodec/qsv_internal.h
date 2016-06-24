@@ -65,6 +65,7 @@ typedef struct QSVSession {
     int        fd_display;
     VADisplay  va_display;
 #endif
+    int        gpu_copy;
 } QSVSession;
 
 /**

@@ -66,6 +66,24 @@ static const AVOption options[] = {
     { "avbr_convergence", "Convergence of the AVBR ratecontrol", OFFSET(qsv.avbr_convergence), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
     { "pic_timing_sei",    "Insert picture timing SEI with pic_struct_syntax element", OFFSET(qsv.pic_timing_sei), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
 
+    { "maxQPI", "maxumum allowed QP value for I frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.maxQPI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "minQPI", "minimum allowed QP value for I frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.minQPI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "maxQPP", "maxumum allowed QP value for P frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.maxQPP), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "minQPP", "minimum allowed QP value for P frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.minQPP), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "maxQPB", "maxumum allowed QP value for B frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.maxQPB), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "minQPB", "minimum allowed QP value for B frame, valid range: 1-51; 0 is default value, no limitation on QP;cannot work with LA.", OFFSET(qsv.minQPB), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+
+	{ "MBBRC", "Setting this flag enables macroblock level bitrate control that generally improves subjective visual quality; cannot work with LA.", OFFSET(qsv.MBBRC), AV_OPT_TYPE_INT, { .i64 = MFX_CODINGOPTION_UNKNOWN }, 0, INT_MAX, VE, "MBBRC"  },
+	{ "unknown",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_CODINGOPTION_UNKNOWN }, INT_MIN, INT_MAX,     VE, "MBBRC" },
+    { "on",         NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_CODINGOPTION_ON      }, INT_MIN, INT_MAX,     VE, "MBBRC" },
+    { "off",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_CODINGOPTION_OFF     }, INT_MIN, INT_MAX,     VE, "MBBRC" },
+
+
+	{ "BRefControl", "BRefControl is used to control usage of B frames as reference in AVC encoder; value: unkown, bRefOff, bRefPyramid", OFFSET(qsv.BRefControl), AV_OPT_TYPE_INT, { .i64 = MFX_B_REF_UNKNOWN }, 0, INT_MAX, VE, "BRefControl" },
+	{ "unknown" ,    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_B_REF_UNKNOWN }, INT_MIN, INT_MAX,     VE, "BRefControl" },
+    { "bRefOff",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_B_REF_OFF     }, INT_MIN, INT_MAX,     VE, "BRefControl" },
+    { "bRefPyramid", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_B_REF_PYRAMID }, INT_MIN, INT_MAX,     VE, "BRefControl" },
+
 #if QSV_VERSION_ATLEAST(1,7)
     { "look_ahead",       "Use VBR algorithm with look ahead",    OFFSET(qsv.look_ahead),       AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "look_ahead_depth", "Depth of look ahead in number frames", OFFSET(qsv.look_ahead_depth), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 100, VE },
@@ -92,6 +110,11 @@ static const AVOption options[] = {
     { "slow",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_3  },            INT_MIN, INT_MAX, VE, "preset" },
     { "slower",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_2  },            INT_MIN, INT_MAX, VE, "preset" },
     { "veryslow",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_BEST_QUALITY  }, INT_MIN, INT_MAX, VE, "preset" },
+
+    { "gpu_copy", "Enable gpu copy in sysmem mode [default = off]", OFFSET(qsv.internal_qs.gpu_copy), AV_OPT_TYPE_INT, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
+    { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_DEFAULT }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
+    { "on", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_ON }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
+    { "off", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
 
     { NULL },
 };

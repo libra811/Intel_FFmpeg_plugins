@@ -3212,37 +3212,11 @@ static int transcode_init(void)
     for (i = 0; i < nb_output_streams; i++) {
         ost = output_streams[i];
         ist = get_input_stream(ost);
-        if(ist && ((strcmp( ist->dec->name, "h264_qsv") == 0) 
-           || (strcmp( ist->dec->name, "hevc_qsv") == 0)
-           || (strcmp( ist->dec->name, "mpeg2_qsv") == 0)
-           || (strcmp(ist->dec->name, "vc1_qsv") == 0)))
-        {    
-            int vpp_type = AVFILTER_NONE;
-            struct FilterGraph *fg;
-            fg = ost->filter->graph;
-     
-            //there will be 4 filters (NULL, format, input & output) default added in graph if no filter added in command line. null will be replaced if specify 
-            //filter in ffmpeg options. so use the following logical to check whether only vpp inserted or not. be changed with better check condition.
-            if(fg->graph->nb_filters > 4)
-                vpp_type = AVFILTER_MORE;
-
-            if(fg->graph->nb_filters == 4){
-                if(strcmp(ist->filters[0]->name, "vpp") == 0){
-                    vpp_type = AVFILTER_VPP_ONLY;
-                }else{
-                    vpp_type = AVFILTER_MORE;
-                }    
-                if(strcmp(ist->filters[0]->name, "null") == 0)
-                    vpp_type = AVFILTER_NONE;
-            }    
-            av_log(NULL, AV_LOG_INFO, "filters = %d type = %d filter_name =%s \n", fg->graph->nb_filters, vpp_type, ist->filters[0]->name);
-            for( int k = 0; k <  fg->graph->nb_filters; k++){
-                av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  fg->graph->filters[k]->name );
-            }
+        if (ist && av_stristr(ist->dec->name, "_qsv")) {
+            int vpp_type = check_filtergraph_type(ost->filter->graph);
             av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
-
-            if( AVFILTER_VPP_ONLY == vpp_type ){
-                vpp_ctx = avfilter_graph_get_filter(fg->graph, "Parsed_vpp_0" );
+            if (AVFILTER_VPP_ONLY == vpp_type) {
+                vpp_ctx = avfilter_graph_get_filter(ost->filter->graph->graph, "Parsed_vpp_0" );
                 av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
             }
         }

@@ -73,7 +73,15 @@ typedef struct QSVEncContext {
     int look_ahead;
     int look_ahead_depth;
     int look_ahead_downsampling;
-	int iopattern;
+    int iopattern;
+    int maxQPI;
+    int minQPI;
+    int maxQPP;
+    int minQPP;
+    int maxQPB;
+    int minQPB;
+    int MBBRC;
+    int BRefControl;
 
     char *load_plugins;
 } QSVEncContext;

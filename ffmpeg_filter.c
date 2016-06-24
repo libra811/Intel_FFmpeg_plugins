@@ -401,6 +401,7 @@ static int insert_filter(AVFilterContext **last_filter, int *pad_idx,
     return 0;
 }
 
+#if !CONFIG_QSV
 static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out)
 {
     char *pix_fmts;
@@ -496,6 +497,129 @@ static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter,
 
     return 0;
 }
+#else
+#include "libavcodec/qsv.h"
+
+//there will be 4 filters (NULL, format, input & output) default added in graph if no filter added in command line. null will be replaced if specify 
+//filter in ffmpeg options. so use the following logical to check whether only vpp inserted or not. be changed with better check condition.
+int check_filtergraph_type(FilterGraph *fg)
+{
+    int i, ret = AVFILTER_NONE;
+    AVFilterContext *filter = NULL;
+    const char *filter_list = "buffer|buffersink|null|format";
+
+    av_log(NULL, AV_LOG_DEBUG, "fg->nb_inputs = %d, nb_outputs = %d, total filters %d\n",
+            fg->nb_inputs, fg->nb_outputs, fg->graph->nb_filters);
+    for (i = 0; i < fg->graph->nb_filters; i++){
+        filter = fg->graph->filters[i];
+        av_log(NULL, AV_LOG_DEBUG, "\tfilter name: %s \n",  filter->name);
+
+        if (0 == strcmp(filter->filter->name, "vpp")){
+            /*Check if this filter is vpp*/
+            ret = AVFILTER_VPP_ONLY;
+        }else if (av_match_list(filter->filter->name, filter_list, '|') <= 0){
+            /*If this filter is not included in filter_list, 
+             * we consider it filter_more.
+             */
+            av_log(NULL, AV_LOG_INFO, "non-vpp filter %s found.\n", filter->filter->name);
+            return AVFILTER_MORE;
+        }
+    }
+
+    return ret;
+}
+
+static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out)
+{
+    char *pix_fmts;
+    OutputStream *ost = ofilter->ost;
+    OutputFile *of = output_files[ost->file_index];
+    InputStream *ist = ost->source_index >= 0 ? input_streams[ost->source_index] : NULL;
+    AVCodecContext *codec = ost->enc_ctx;
+    AVFilterContext *last_filter = out->filter_ctx;
+    AVFilterContext *vpp_filter = NULL;
+    int pad_idx = out->pad_idx;
+    int ret, i;
+    char name[255];
+
+    snprintf(name, sizeof(name), "output stream %d:%d", ost->file_index, ost->index);
+    ret = avfilter_graph_create_filter(&ofilter->filter,
+                                       avfilter_get_by_name("buffersink"),
+                                       name, NULL, NULL, fg->graph);
+
+    if (ret < 0)
+        return ret;
+
+    for (i = 0; i < fg->graph->nb_filters; i++)
+        if(!strcmp(fg->graph->filters[i]->filter->name, "vpp"))
+            vpp_filter = fg->graph->filters[i];
+
+    if (codec->width && codec->height) {
+        char args[255];
+
+        if(!vpp_filter){
+            snprintf(args, sizeof(args), "w=%d:h=%d",
+                     codec->width,
+                     codec->height);
+#if 0
+            AVDictionaryEntry *e = NULL;
+            while ((e = av_dict_get(ost->sws_dict, "", e,
+                                    AV_DICT_IGNORE_SUFFIX))) {
+                av_strlcatf(args, sizeof(args), ":%s=%s", e->key, e->value);
+            }
+#endif
+            snprintf(name, sizeof(name), "vpp for output stream %d:%d",
+                     ost->file_index, ost->index);
+            if ((ret = avfilter_graph_create_filter(&vpp_filter, avfilter_get_by_name("vpp"),
+                                                    name, args, NULL, fg->graph)) < 0)
+                return ret;
+            if ((ret = avfilter_link(last_filter, pad_idx, vpp_filter, 0)) < 0)
+                return ret;
+
+            last_filter = vpp_filter;
+            pad_idx = 0;
+        }else{
+            snprintf(args, sizeof(args), "%dx%d", codec->width, codec->height);
+            ret = avfilter_process_command(vpp_filter, "s", args, NULL, 0, 0);
+        }
+    }
+
+    if ((pix_fmts = choose_pix_fmts(ost))) {
+        AVFilterContext *filter;
+        snprintf(name, sizeof(name), "pixel format for output stream %d:%d",
+                 ost->file_index, ost->index);
+        ret = avfilter_graph_create_filter(&filter,
+                                           avfilter_get_by_name("format"),
+                                           "format", pix_fmts, NULL, fg->graph);
+        av_freep(&pix_fmts);
+        if (ret < 0)
+            return ret;
+        if ((ret = avfilter_link(last_filter, pad_idx, filter, 0)) < 0)
+            return ret;
+
+        last_filter = filter;
+        pad_idx     = 0;
+    }
+
+    snprintf(name, sizeof(name), "trim for output stream %d:%d",
+             ost->file_index, ost->index);
+    ret = insert_trim(of->start_time, of->recording_time,
+                      &last_filter, &pad_idx, name);
+    if (ret < 0)
+        return ret;
+
+    if ((ret = avfilter_link(last_filter, pad_idx, ofilter->filter, 0)) < 0)
+        return ret;
+
+    if (ist &&
+        ist->dec_ctx->codec &&
+        av_stristr(ist->dec_ctx->codec->name, "_qsv") &&
+        check_filtergraph_type(fg) == AVFILTER_VPP_ONLY)
+        ret = av_qsv_pipeline_insert_vpp(ist->dec_ctx, vpp_filter);
+
+    return 0;
+}
+#endif
 
 static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out)
 {

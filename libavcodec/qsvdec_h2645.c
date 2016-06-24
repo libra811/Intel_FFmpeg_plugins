@@ -34,22 +34,35 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "qsvdec.h"
+#include "h264.h"
 
 enum LoadPlugin {
     LOAD_PLUGIN_NONE,
     LOAD_PLUGIN_HEVC_SW,
 };
-#if 0
-typedef struct QSVH2645Context {
-    AVClass *class;
-    QSVContext qsv;
-    int load_plugin;
 
-    // the filter for converting to Annex B
-    AVBitStreamFilterContext *bsf;
+static int is_extra(const uint8_t *buf, int buf_size)
+{
+    int cnt= buf[5]&0x1f;
+    const uint8_t *p= buf+6;
+    while(cnt--){
+        int nalsize= AV_RB16(p) + 2;
+        if(nalsize > buf_size - (p-buf) || p[2]!=0x67)
+            return 0;
+        p += nalsize;
+    }
+    cnt = *(p++);
+    if(!cnt)
+        return 0;
+    while(cnt--){
+        int nalsize= AV_RB16(p) + 2;
+        if(nalsize > buf_size - (p-buf) || p[2]!=0x68)
+            return 0;
+        p += nalsize;
+    }
+    return 1;
+}
 
-} QSVH2645Context;
-#endif
 static av_cold int qsv_decode_close(AVCodecContext *avctx)
 {
     QSVH2645Context *s = avctx->priv_data;
@@ -57,6 +70,11 @@ static av_cold int qsv_decode_close(AVCodecContext *avctx)
     ff_qsv_decode_close(&s->qsv);
 
     av_bitstream_filter_close(s->bsf);
+    if(s->avctx_internal){
+        if(s->avctx_internal->extradata)
+            av_freep(&s->avctx_internal->extradata);
+        avcodec_free_context(&s->avctx_internal);
+    }
 
     return 0;
 }
@@ -91,6 +109,14 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
         goto fail;
     }
 
+    s->avctx_internal = avcodec_alloc_context3(NULL);
+    if (avctx->extradata) {
+        s->avctx_internal->extradata = av_mallocz(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+        memcpy(s->avctx_internal->extradata, avctx->extradata,
+               avctx->extradata_size);
+        s->avctx_internal->extradata_size = avctx->extradata_size;
+    }
+
     ret = ff_qsv_decode_init_session(avctx, &s->qsv);
     return ret;
 fail:
@@ -101,40 +127,59 @@ fail:
 static int qsv_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
 {
-	
     QSVH2645Context *s = avctx->priv_data;
     AVFrame *frame    = data;
     int ret;
     uint8_t *p_filtered = NULL;
     int      n_filtered = 0;
     AVPacket pkt_filtered = { 0 };
+    int side_size = 0;
+    uint8_t *side_data = NULL;
+    int need_free = 0;
 
+    pkt_filtered = *avpkt;
     if (avpkt->size) {
-        if (avpkt->size > 3 && !avpkt->data[0] &&
-            !avpkt->data[1] && !avpkt->data[2] && 1==avpkt->data[3]) {
-            /* we already have annex-b prefix */
-            return ff_qsv_decode(avctx, &s->qsv, frame, got_frame, avpkt);
-
-        } else {
+        /*If avpkt->size > 3 && not begin with {0, 0, 0, 1}, we treat it as AVC mode.*/
+        if(avpkt->size > 3 && AV_RB32(avpkt->data) > 1){
             /* no annex-b prefix. try to restore: */
-            ret = av_bitstream_filter_filter(s->bsf, avctx, "private_spspps_buf",
+            /*Check if there's extra_data in pkt. For AVC, SPS/PPS is stored in extra_data.*/
+            if (av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, NULL)) {
+                side_data = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
+                if(is_extra(side_data, side_size)){
+                    if(s->avctx_internal->extradata){
+                        av_freep(&s->avctx_internal->extradata);
+                        av_bitstream_filter_close(s->bsf);
+                        s->bsf = av_bitstream_filter_init("h264_mp4toannexb");
+                    }
+                    s->avctx_internal->extradata = av_mallocz(side_size + FF_INPUT_BUFFER_PADDING_SIZE);
+                    memcpy(s->avctx_internal->extradata, side_data, side_size);
+                    s->avctx_internal->extradata_size = side_size;
+                }
+            }
+
+            /* Copy avctx->extradata to avctx_internal, because bsf will change extradata.*/
+            if (!s->avctx_internal->extradata && avctx->extradata) {
+                s->avctx_internal->extradata = av_mallocz(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+                memcpy(s->avctx_internal->extradata, avctx->extradata,
+                       avctx->extradata_size);
+                s->avctx_internal->extradata_size = avctx->extradata_size;
+            }
+            ret = av_bitstream_filter_filter(s->bsf, s->avctx_internal, "private_spspps_buf",
                                          &p_filtered, &n_filtered,
                                          avpkt->data, avpkt->size, 0);
-            if (ret>=0) {
-                pkt_filtered.pts  = avpkt->pts;
+            if(ret >= 0){
                 pkt_filtered.data = p_filtered;
                 pkt_filtered.size = n_filtered;
-
-                ret = ff_qsv_decode(avctx, &s->qsv, frame, got_frame, &pkt_filtered);
-		
-                if (p_filtered != avpkt->data)
-                    av_free(p_filtered);
-                return ret > 0 ? avpkt->size : ret;
+                need_free = (ret == 1);
             }
         }
     }
 
-    return ff_qsv_decode(avctx, &s->qsv, frame, got_frame, avpkt);
+    ret = ff_qsv_decode(avctx, &s->qsv, frame, got_frame, &pkt_filtered);
+    if(need_free)
+        av_freep(&p_filtered);
+
+    return ret;
 }
 
 static void qsv_decode_flush(AVCodecContext *avctx)
@@ -197,6 +242,10 @@ AVHWAccel ff_h264_qsv_hwaccel = {
 
 static const AVOption options[] = {
     { "async_depth", "Internal parallelization depth, the higher the value the higher the latency.", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, VD },
+    { "gpu_copy", "Enable gpu copy in sysmem mode [default = off]", OFFSET(qsv.internal_qs.gpu_copy), AV_OPT_TYPE_INT, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VD, "gpu_copy" },
+    { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_DEFAULT }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VD, "gpu_copy" },
+    { "on", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_ON }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VD, "gpu_copy" },
+    { "off", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VD, "gpu_copy" },
     { NULL },
 };
 

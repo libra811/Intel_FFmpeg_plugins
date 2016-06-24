@@ -36,6 +36,9 @@
 #include "libavcodec/avcodec.h"
 #include "libavcodec/qsvenc.h"
 #include "libavcodec/qsv_internal.h"
+#include "libavformat/avformat.h"
+#include "libavutil/pixdesc.h"
+#include "libswscale/swscale.h"
 
 
 // number of video enhancement filters (denoise, procamp, detail, video_analysis, image stab)
@@ -61,11 +64,18 @@ typedef struct {
     mfxFrameAllocator *pFrameAllocator;	
     mfxFrameAllocResponse* out_response;
     QSVEncContext* enc_ctx;
-	
+
+    AVFifoBuffer      *thm_framebuffer;
+    pthread_t          thumbnail_task;
+    int                task_exit;
+    int                thm_pendding;
+    AVFormatContext   *thm_mux;
+    AVStream          *thm_stream;
+    AVCodecContext    *thm_enc;
+    struct SwsContext *thm_swsctx;
+
 	int num_surfaces_in;                            // input surfaces
     int num_surfaces_out;                           // output surfaces
-
-    unsigned char * surface_buffers_out;            // output surface buffer
     int sysmem_cur_out_idx;
 
     char *load_plugins;
@@ -102,6 +112,9 @@ typedef struct {
 
     int use_frc;                // use framerate conversion
     int vpp_ready;
+    char *thumbnail_file;
+    int thumb_interval;
+    int use_thumbnail;
 
 } VPPContext;
 
