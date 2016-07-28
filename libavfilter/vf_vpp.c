@@ -52,10 +52,10 @@ static const AVOption vpp_options[] = {
     { "deinterlace", "deinterlace mode: 0=off, 1=bob, 2=advanced",             OFFSET(deinterlace),  AV_OPT_TYPE_INT, {.i64=0}, 0, MFX_DEINTERLACING_ADVANCED, .flags = FLAGS },
     { "denoise",     "denoise level [0, 100]",                                 OFFSET(denoise),      AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
     { "detail",      "detail enhancement level [0, 100]",                      OFFSET(detail),       AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
-    { "w",           "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, 0, 4096, .flags = FLAGS },
-    { "width",       "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, 0, 4096, .flags = FLAGS },
-    { "h",           "Output video height",                                    OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, 0, 2304, .flags = FLAGS },
-    { "height",      "Output video height : ",                                 OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, 0, 2304, .flags = FLAGS },
+    { "w",           "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, INT_MIN, 4096, .flags = FLAGS },
+    { "width",       "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, INT_MIN, 4096, .flags = FLAGS },
+    { "h",           "Output video height",                                    OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, INT_MIN, 2304, .flags = FLAGS },
+    { "height",      "Output video height : ",                                 OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, INT_MIN, 2304, .flags = FLAGS },
     { "dpic",        "dest pic struct: 0=tff, 1=progressive [default], 2=bff", OFFSET(dpic),         AV_OPT_TYPE_INT, {.i64 = 1 }, 0, 2, .flags = FLAGS },
     { "framerate",   "output framerate",                                       OFFSET(framerate),    AV_OPT_TYPE_RATIONAL, { .dbl = 0.0 },0, DBL_MAX, .flags = FLAGS },
     { "async_depth", "Maximum processing parallelism [default = 4]",           OFFSET(async_depth),  AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, .flags = FLAGS },
@@ -654,8 +654,16 @@ static int config_input(AVFilterLink *inlink)
     if(vpp->framerate.den == 0 || vpp->framerate.num == 0)
         vpp->framerate = inlink->frame_rate;
 
-    /*By default, out_rect = main_in_rect*/
-    if(vpp->out_height == 0 || vpp->out_width == 0){
+    /*
+     * if out_w is not set(<=0), we calc it based on out_h;
+     * if out_h is not set(<=0), we calc it based on out_w;
+     * if both are not set, we set out_rect = in_rect.
+     */
+    if (vpp->out_width <= 0)
+        vpp->out_width  = av_rescale(vpp->out_height, inlink->w, inlink->h);
+    if (vpp->out_height <= 0)
+        vpp->out_height = av_rescale(vpp->out_width, inlink->h, inlink->w);
+    if (vpp->out_height <= 0 || vpp->out_width <= 0) {
         vpp->out_width  = inlink->w;
         vpp->out_height = inlink->h;
     }
