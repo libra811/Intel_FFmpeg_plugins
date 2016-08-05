@@ -299,14 +299,22 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     if (!q->session) {
         av_log(avctx, AV_LOG_DEBUG, "QSVENC: GPUCopy %s.\n",
                 q->internal_qs.gpu_copy == MFX_GPUCOPY_ON ? "enabled":"disabled");
-        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs,
-                                           q->load_plugins);
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs);
         if (ret < 0){
 	        av_log(avctx, AV_LOG_ERROR,"init internal session return %d\n", ret);
             return ret;
     	}
 
         q->session = q->internal_qs.session;
+    }
+
+    if (q->load_plugins) {
+        ret = ff_qsv_load_plugins(q->session, q->load_plugins);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to load plugins %s, ret = %s\n",
+                    q->load_plugins, av_err2str(ret));
+            return ret;
+        }
     }
 
 	if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){

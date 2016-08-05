@@ -523,8 +523,7 @@ static int config_vpp(AVFilterLink *inlink, AVFrame * pic)
     if (!vpp->session) {
         av_log(vpp->ctx, AV_LOG_DEBUG, "sysmem-vpp: GPUCopy %s.\n",
                 vpp->internal_qs.gpu_copy == MFX_GPUCOPY_ON ? "enabled" : "disabled");
-        ret = ff_qsv_init_internal_session((AVCodecContext *)ctx, &vpp->internal_qs,
-                                               vpp->load_plugins);
+        ret = ff_qsv_init_internal_session(ctx, &vpp->internal_qs);
         if (ret < 0)
             return ret;
 

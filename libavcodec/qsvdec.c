@@ -221,13 +221,22 @@ int ff_qsv_decode_init_session(AVCodecContext *avctx, QSVContext *q)
     if (!q->session) {
         av_log(avctx, AV_LOG_DEBUG, "QSVDEC: GPUCopy %s.\n",
                 q->internal_qs.gpu_copy == MFX_GPUCOPY_ON ? "enabled":"disabled");
-		ret = ff_qsv_init_internal_session(avctx, &q->internal_qs, q->load_plugins);
+		ret = ff_qsv_init_internal_session(avctx, &q->internal_qs);
 		if (ret < 0){
 			av_log(avctx, AV_LOG_ERROR, "ff_qsv_init_internal_session failed\n");		
             return ret;
 		}
 
         q->session = q->internal_qs.session;			
+    }
+
+    if (q->load_plugins) {
+        ret = ff_qsv_load_plugins(q->session, q->load_plugins);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to load plugins %s, ret = %s\n",
+                    q->load_plugins, av_err2str(ret));
+            return ret;
+        }
     }
 
 	//q->pCodecConnect = codec_connect;
@@ -239,7 +248,7 @@ int ff_qsv_decode_init_session(AVCodecContext *avctx, QSVContext *q)
 
 static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 {
-    mfxVideoParam param = { { 0 } };
+    mfxVideoParam param = { 0 };
     mfxBitstream bs   = { { { 0 } } };
     int ret, idx = 0;
     enum AVPixelFormat pix_fmts[3] = { AV_PIX_FMT_QSV,
@@ -358,7 +367,7 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
 
 static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 {
-    mfxVideoParam param = { { 0 } };
+    mfxVideoParam param = { 0 };
     mfxBitstream bs   = { { { 0 } } };
     int ret;
     //VADisplay va_dpy;
@@ -896,7 +905,7 @@ void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q)
 //    QSVFrame *cur;
     AVPacket pkt;
     int ret = 0;
-    mfxVideoParam param = { { 0 } };
+    mfxVideoParam param = { 0 };
 
     if (q->reinit_pending) {
         close_decoder(q);
