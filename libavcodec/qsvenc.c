@@ -528,6 +528,7 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
     mfxFrameSurface1 *surf = NULL;
     mfxSyncPoint sync      = NULL;
     int ret;
+    mfxEncodeCtrl ctrl = {{0}};
 
     if (frame) {
         ret = submit_frame(q, frame, &surf);
@@ -535,6 +536,8 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
             av_log(avctx, AV_LOG_ERROR, "Error submitting the frame for encoding.\n");
             return ret;
         }
+        if (frame->pict_type == AV_PICTURE_TYPE_I)
+            ctrl.FrameType = MFX_FRAMETYPE_I | MFX_FRAMETYPE_REF;
     }
 
     ret = av_new_packet(&new_pkt, q->packet_size);
@@ -551,7 +554,7 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
     bs->Data      = new_pkt.data;
     bs->MaxLength = new_pkt.size;
     do {
-        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, NULL, surf, bs, &sync);
+        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, &ctrl, surf, bs, &sync);
         if (ret == MFX_WRN_DEVICE_BUSY) {
             av_usleep(500);
             continue;
