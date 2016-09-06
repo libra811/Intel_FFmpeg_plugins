@@ -3212,7 +3212,7 @@ static int transcode_init(void)
     for (i = 0; i < nb_output_streams; i++) {
         ost = output_streams[i];
         ist = get_input_stream(ost);
-        if (ist && av_stristr(ist->dec->name, "_qsv")) {
+        if (ist && av_stristr(ist->dec->name, "_qsv") && ost->filter) {
             int vpp_type = check_filtergraph_type(ost->filter->graph);
             av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
             if (AVFILTER_VPP_ONLY == vpp_type) {
