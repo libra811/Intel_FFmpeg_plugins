@@ -330,6 +330,14 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     avctx->coded_height = param.mfx.FrameInfo.Height;
     avctx->width        = param.mfx.FrameInfo.CropW - param.mfx.FrameInfo.CropX;
     avctx->height       = param.mfx.FrameInfo.CropH - param.mfx.FrameInfo.CropY;
+    avctx->framerate.num= param.mfx.FrameInfo.FrameRateExtN;
+    avctx->framerate.den= param.mfx.FrameInfo.FrameRateExtD;
+    avctx->time_base.num= param.mfx.FrameInfo.FrameRateExtD;
+    avctx->time_base.den= param.mfx.FrameInfo.FrameRateExtN;
+    avctx->sample_aspect_ratio.num = param.mfx.FrameInfo.AspectRatioW;
+    avctx->sample_aspect_ratio.den = param.mfx.FrameInfo.AspectRatioH;
+    if (avctx->codec_id == AV_CODEC_ID_H264)
+        avctx->ticks_per_frame = 2;
 
     /* maximum decoder latency should be not exceed max DPB size for h.264 and
        HEVC which is 16 for both cases.
@@ -461,6 +469,14 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     avctx->coded_height = param.mfx.FrameInfo.Height;
     avctx->width        = param.mfx.FrameInfo.CropW - param.mfx.FrameInfo.CropX;
     avctx->height       = param.mfx.FrameInfo.CropH - param.mfx.FrameInfo.CropY;
+    avctx->framerate.num= param.mfx.FrameInfo.FrameRateExtN;
+    avctx->framerate.den= param.mfx.FrameInfo.FrameRateExtD;
+    avctx->time_base.num= param.mfx.FrameInfo.FrameRateExtD;
+    avctx->time_base.den= param.mfx.FrameInfo.FrameRateExtN;
+    avctx->sample_aspect_ratio.num = param.mfx.FrameInfo.AspectRatioW;
+    avctx->sample_aspect_ratio.den = param.mfx.FrameInfo.AspectRatioH;
+    if (avctx->codec_id == AV_CODEC_ID_H264)
+        avctx->ticks_per_frame = 2;
 
     //set info to enc
 	if( NULL != q->enc_ctx )
