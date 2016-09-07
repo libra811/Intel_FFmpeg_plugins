@@ -344,6 +344,8 @@ static int qsv_decode_init_sysmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     avctx->time_base.den= param.mfx.FrameInfo.FrameRateExtN;
     avctx->sample_aspect_ratio.num = param.mfx.FrameInfo.AspectRatioW;
     avctx->sample_aspect_ratio.den = param.mfx.FrameInfo.AspectRatioH;
+    if (avctx->codec_id == AV_CODEC_ID_H264)
+        avctx->ticks_per_frame = 2;
 
     /* maximum decoder latency should be not exceed max DPB size for h.264 and
        HEVC which is 16 for both cases.
@@ -481,6 +483,8 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
     avctx->time_base.den= param.mfx.FrameInfo.FrameRateExtN;
     avctx->sample_aspect_ratio.num = param.mfx.FrameInfo.AspectRatioW;
     avctx->sample_aspect_ratio.den = param.mfx.FrameInfo.AspectRatioH;
+    if (avctx->codec_id == AV_CODEC_ID_H264)
+        avctx->ticks_per_frame = 2;
 
     //set info to enc
 	if( NULL != q->enc_ctx )
@@ -566,7 +570,7 @@ static int get_free_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurfac
 			break;
 		}
 		else{
-			av_log( avctx, AV_LOG_ERROR, "waiting until there are free surface" );
+			av_log( avctx, AV_LOG_ERROR, "waiting until there are free surface\n" );
 			av_usleep(1000);
 		}
 
