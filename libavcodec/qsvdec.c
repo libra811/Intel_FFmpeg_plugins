@@ -183,10 +183,10 @@ int av_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp
 
 	if(NULL == qsv->enc_ctx) return 0;
 	qsv->vpp = vpp;
-	vpp->session = qsv->session;
+	vpp->inter_vpp[0].session = qsv->session;
 	vpp->pFrameAllocator = &(qsv->frame_allocator);
 	vpp->enc_ctx = qsv->enc_ctx;
-		
+
 	return 0;
 }
 
@@ -438,15 +438,15 @@ static int qsv_decode_init_vidmem(AVCodecContext *avctx, QSVContext *q, AVPacket
             "NumFrameSuggested=%d, vpp->NumFrameSuggested=%d\n",
             ret, q->request->Info.Width, q->request->Info.Height,
             q->request->Info.FourCC, q->request->NumFrameSuggested,
-            q->vpp ? q->vpp->req[0].NumFrameSuggested : -1);
+            q->vpp ? q->vpp->inter_vpp[0].req[0].NumFrameSuggested : -1);
 
 	if( NULL != q->enc_ctx ){
 		if( NULL == q->vpp ){
 			q->request->NumFrameSuggested += q->enc_ctx->req.NumFrameSuggested;
 	    	q->request->NumFrameMin += q->enc_ctx->req.NumFrameSuggested;
 		}else{
-			q->request->NumFrameSuggested += q->vpp->req[0].NumFrameSuggested;
-	    	q->request->NumFrameMin += q->vpp->req[0].NumFrameSuggested;
+			q->request->NumFrameSuggested += q->vpp->inter_vpp[0].req[0].NumFrameSuggested;
+	    	q->request->NumFrameMin += q->vpp->inter_vpp[0].req[0].NumFrameSuggested;
 		}
 			
 	}

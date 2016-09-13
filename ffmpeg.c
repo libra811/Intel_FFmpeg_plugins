@@ -2783,9 +2783,6 @@ static int transcode_init(void)
     InputStream *ist;
     char error[1024] = {0};
     int want_sdp = 1;
-#if CONFIG_QSV
-    AVFilterContext *vpp_ctx = NULL;
-#endif
 
     for (i = 0; i < nb_filtergraphs; i++) {
         FilterGraph *fg = filtergraphs[i];
@@ -3210,25 +3207,58 @@ static int transcode_init(void)
 
     /* open each encoder */
     for (i = 0; i < nb_output_streams; i++) {
+        AVFilterContext *vpp_ctx = NULL;
+        int vpp_type = AVFILTER_NONE;
+        int use_videomem = 0;
         ost = output_streams[i];
         ist = get_input_stream(ost);
-        if (ist && av_stristr(ist->dec->name, "_qsv") && ost->filter) {
-            int vpp_type = check_filtergraph_type(ost->filter->graph);
-            av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
+
+        if (ost->filter && ost->enc->type == AVMEDIA_TYPE_VIDEO) {
+            vpp_type = check_filtergraph_type_qsv(ost->filter->graph);
+            /*
+             * If only vpp will deal with frame->data, and only ONE vpp
+             * is allocated in this filter link, we'll insert it to the
+             * QSV pipeline.
+             */
             if (AVFILTER_VPP_ONLY == vpp_type) {
-                vpp_ctx = avfilter_graph_get_filter(ost->filter->graph->graph, "Parsed_vpp_0" );
-                av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
+                /*
+                 * Get the only vpp.
+                 */
+                for (int i = 0; i < ost->filter->graph->graph->nb_filters; i++)
+                    if (0 == strcmp(ost->filter->graph->graph->filters[i]->filter->name, "vpp")) {
+                        vpp_ctx = ost->filter->graph->graph->filters[i];
+                        break;
+                    }
+                /*
+                 * For multi-inputs, ist can't be got by "get_input_stream()", so
+                 * we take vpp's main input to deside whether we can use video-memory.
+                 */
+                if (!ist)
+                    ist = get_ist_by_filter(ost->filter->graph, vpp_ctx);
             }
+        }
+
+        /*
+         * Check if decoder and encoder are of '*_qsv'.
+         */
+        if (ist && av_stristr(ist->dec->name, "_qsv") &&
+            ost->encoding_needed && av_stristr(ost->enc->name, "_qsv") &&
+            vpp_type != AVFILTER_MORE) {
+            use_videomem = 1;
+            av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
+            /*
+             * If an only vpp exists, insert it to the pipeline.
+             */
+            if (vpp_ctx)
+                av_qsv_pipeline_insert_vpp(ist->dec_ctx, vpp_ctx);
         }
 
         ret = init_output_stream(output_streams[i], error, sizeof(error));
         if (ret < 0)
             goto dump_format;
 
-        if( vpp_ctx != NULL ){
-            av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den );
-            vpp_ctx = NULL;
-        }
+        if (vpp_ctx && use_videomem)
+            av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den);
     }
 #endif
 

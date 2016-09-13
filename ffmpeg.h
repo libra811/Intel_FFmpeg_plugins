@@ -545,6 +545,8 @@ int guess_input_channel_layout(InputStream *ist);
 enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *avctx, AVCodec *codec, enum AVPixelFormat target);
 void choose_sample_fmt(AVStream *st, AVCodec *codec);
 
+int check_filtergraph_type_qsv(FilterGraph *fg);
+InputStream* get_ist_by_filter(FilterGraph *fg, AVFilterContext *ctx);
 int configure_filtergraph(FilterGraph *fg);
 int configure_output_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out);
 int check_filtergraph_type(FilterGraph *fg);
