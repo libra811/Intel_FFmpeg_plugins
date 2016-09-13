@@ -26,7 +26,7 @@
 #include <mfx/mfxplugin.h>
 
 #include "avfilter.h"
-//#include "internal.h"
+#include "framesync.h"
 
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
@@ -40,30 +40,42 @@
 #include "libavutil/pixdesc.h"
 #include "libswscale/swscale.h"
 
-
 // number of video enhancement filters (denoise, procamp, detail, video_analysis, image stab)
 #define ENH_FILTERS_COUNT           5
+enum{
+    VPP_PAD_MAIN = 0,
+    VPP_PAD_OVERLAY,
+    VPP_PAD_NUM,
+};
+
+typedef struct VPPInterContext {
+    mfxSession session;
+    QSVSession internal_qs;
+    mfxVideoParam  VppParam;
+    mfxVideoParam *pVppParam;
+    mfxFrameAllocRequest req[2];              // [0] - in, [1] - out
+    mfxFrameAllocResponse *in_response;
+    mfxFrameAllocResponse *out_response;
+    mfxFrameSurface1 **in_surface;
+    mfxFrameSurface1 **out_surface;
+    int *num_surfaces_in;                      // input surfaces
+    int num_surfaces_out;                     // output surfaces
+    int sysmem_cur_out_idx;
+    int nb_inputs;                            // number inputs for composite
+    /* VPP extension */
+    mfxExtBuffer*       pExtBuf[1+ENH_FILTERS_COUNT];
+    mfxExtVppAuxData    extVPPAuxData;
+} VPPInterContext;
 
 typedef struct {
     const AVClass *class;
 
     AVFilterContext *ctx;
-
-    mfxSession session;
-    QSVSession internal_qs;
-
-    AVRational framerate;                           // target framerate
-
-	QSVFrame *in_work_frames;                       // used for video memory
-	QSVFrame *out_work_frames;                      // used for video memory
-
-    mfxFrameSurface1 **in_surface;
-    mfxFrameSurface1 **out_surface;
-
-    mfxFrameAllocRequest req[2];                    // [0] - in, [1] - out
-    mfxFrameAllocator *pFrameAllocator;	
-    mfxFrameAllocResponse* out_response;
     QSVEncContext* enc_ctx;
+
+    int             num_vpp;
+    VPPInterContext inter_vpp[2];
+    mfxFrameAllocator inter_alloc;
 
     AVFifoBuffer      *thm_framebuffer;
     pthread_t          thumbnail_task;
@@ -74,27 +86,21 @@ typedef struct {
     AVCodecContext    *thm_enc;
     struct SwsContext *thm_swsctx;
 
-	int num_surfaces_in;                            // input surfaces
-    int num_surfaces_out;                           // output surfaces
-    int sysmem_cur_out_idx;
-
-    char *load_plugins;
-
-    mfxVideoParam*      pVppParam;
-
-    /* VPP extension */
-    mfxExtBuffer*       pExtBuf[1+ENH_FILTERS_COUNT];
-    mfxExtVppAuxData    extVPPAuxData;
+    mfxFrameAllocator *pFrameAllocator;
+    FFFrameSync       *fs;
+    int                frame_number;
+    int                vpp_ready;
 
     /* Video Enhancement Algorithms */
     mfxExtVPPDeinterlacing  deinterlace_conf;
     mfxExtVPPFrameRateConversion frc_conf;
     mfxExtVPPDenoise denoise_conf;
     mfxExtVPPDetail detail_conf;
+    mfxExtVPPComposite composite_conf;
 
+    /*user-defined parameters*/
     int out_width;
     int out_height;
-
     int dpic;                   // destination picture structure
                                 // -1 = unkown
                                 // 0 = interlaced top field first
@@ -107,15 +113,15 @@ typedef struct {
                                 // Level is the optional value from the interval [0; 100]
     int async_depth;            // async dept used by encoder
     int max_b_frames;           // maxiumum number of b frames used by encoder
-
-    int frame_number;
-
     int use_frc;                // use framerate conversion
-    int vpp_ready;
+    char *load_plugins;
     char *thumbnail_file;
     int thumb_interval;
     int use_thumbnail;
-
+    int use_composite;          // 1 = use composite; 0=none
+    mfxVPPCompInputStream layout[VPP_PAD_NUM];
+    AVRational framerate;       // target framerate
+    int eof_action;             // actions when encountering EOF of overlay
 } VPPContext;
 
 #endif

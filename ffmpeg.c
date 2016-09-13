@@ -2571,9 +2571,6 @@ static int transcode_init(void)
     InputStream *ist;
     char error[1024] = {0};
     int want_sdp = 1;
-#if CONFIG_QSV
-    AVFilterContext *vpp_ctx = NULL;
-#endif
 
     for (i = 0; i < nb_filtergraphs; i++) {
         FilterGraph *fg = filtergraphs[i];
@@ -3091,47 +3088,56 @@ static int transcode_init(void)
 //            }
             goto dump_format;
         }
-    
+
     /* open each encoder */
     for (i = 0; i < nb_output_streams; i++) {
+        AVFilterContext *vpp_ctx = NULL;
+        int use_videomem = 0;
+
         ost = output_streams[i];
         if (ost->encoding_needed) {
-            AVCodec      *codec = ost->enc;
+            AVCodec        *codec = ost->enc;
             AVCodecContext *dec = NULL;
+            int vpp_type = AVFILTER_NONE;
 
-            if ((ist = get_input_stream(ost))){
+            if ((ist = get_input_stream(ost)))
                 dec = ist->dec_ctx;
-                if((strcmp( ist->dec->name, "h264_qsv") == 0)
-                   || (strcmp( ist->dec->name, "hevc_qsv") == 0)
-                   || (strcmp( ist->dec->name, "mpeg2_qsv") == 0)
-                   || (strcmp(ist->dec->name, "vc1_qsv") == 0)){
-                    int vpp_type = AVFILTER_NONE;
-                    struct FilterGraph *fg;
-                    fg = ost->filter->graph;
-                    if(fg->graph->nb_filters > 4)
-                        vpp_type = AVFILTER_MORE;
 
-                    if(fg->graph->nb_filters == 4){
-                        if(strcmp(ist->filters[0]->name, "vpp") == 0)
-                            vpp_type = AVFILTER_VPP_ONLY;
-                        else
-                            vpp_type = AVFILTER_MORE;
+            if (ost->filter && ost->enc->type == AVMEDIA_TYPE_VIDEO) {
+                vpp_type = check_filtergraph_type_qsv(ost->filter->graph);
+                /*
+                 * If only vpp will deal with frame->data, and only ONE vpp
+                 * is allocated in this filter link, we'll insert it to the
+                 * QSV pipeline.
+                 */
+                if (AVFILTER_VPP_ONLY == vpp_type) {
+                    /*
+                     * Get the only vpp.
+                     */
+                    for (int i = 0; i < ost->filter->graph->graph->nb_filters; i++)
+                        if (0 == strcmp(ost->filter->graph->graph->filters[i]->filter->name, "vpp")) {
+                            vpp_ctx = ost->filter->graph->graph->filters[i];
+                            break;
+                        }
 
-                        if(strcmp(ist->filters[0]->name, "null") == 0)
-                            vpp_type = AVFILTER_NONE;
-                    }
-                    av_log(NULL, AV_LOG_INFO, "filters = %d type = %d filter_name =%s \n", fg->graph->nb_filters, vpp_type, ist->filters[0]->name);
+                    /*
+                     * For multi-inputs, ist can't be got by "get_input_stream()", so
+                     * we take vpp's main input to deside whether we can use video-memory.
+                     */
+                    if (!ist)
+                        ist = get_ist_by_filter(ost->filter->graph, vpp_ctx);
+                }
+            }
 
-                    for( int k = 0; k <  fg->graph->nb_filters; k++)
-                        av_log(NULL, AV_LOG_INFO, "filter name: %s \n",  fg->graph->filters[k]->name );
-
+            if (ist &&
+                av_stristr(ist->dec->name, "_qsv") &&
+                av_stristr(ost->enc->name, "_qsv") &&
+                vpp_type != AVFILTER_MORE) {
+                    use_videomem = 1;
                     av_qsv_pipeline_connect_codec(ist->dec_ctx, ost->enc_ctx, vpp_type);
 
-                    if( AVFILTER_VPP_ONLY == vpp_type ){
-                        vpp_ctx = avfilter_graph_get_filter(fg->graph, "Parsed_vpp_0" );
-                        av_qsv_pipeline_insert_vpp( ist->dec_ctx, vpp_ctx );
-                    }
-                }
+                    if (vpp_ctx)
+                        av_qsv_pipeline_insert_vpp(ist->dec_ctx, vpp_ctx);
             }
 
             if (dec && dec->subtitle_header) {
@@ -3182,10 +3188,9 @@ static int transcode_init(void)
 
         // copy timebase while removing common factors
         ost->st->time_base = av_add_q(ost->enc_ctx->time_base, (AVRational){0, 1});
-        if( vpp_ctx != NULL ){
+
+        if (vpp_ctx && use_videomem)
             av_qsv_pipeline_config_vpp(ist->dec_ctx, vpp_ctx, ist->st->r_frame_rate.num, ist->st->r_frame_rate.den );
-            vpp_ctx = NULL;
-        }
     }
 #endif
 

@@ -338,6 +338,100 @@ static int insert_trim(int64_t start_time, int64_t duration,
     *pad_idx     = 0;
     return 0;
 }
+#if CONFIG_QSV
+#include "libavcodec/qsv.h"
+int check_filtergraph_type_qsv(FilterGraph *fg)
+{
+    int              ret    = AVFILTER_NONE, vpp_cnt = 0;
+    AVFilterContext *vpp    = NULL;
+    AVFilterContext *filter = NULL;
+    const char      *filter_list = "buffer|buffersink|null|format|setpts";
+
+    av_log(NULL, AV_LOG_DEBUG, "fg->nb_inputs = %d, nb_outputs = %d, total filters %d\n",
+            fg->nb_inputs, fg->nb_outputs, fg->graph->nb_filters);
+
+    /*
+     * Check if there're vpp filters.
+     */
+    for (int i = 0; i < fg->graph->nb_filters; i++) {
+        filter = fg->graph->filters[i];
+        av_log(NULL, AV_LOG_DEBUG, "\tfilter name: %s \n",  filter->name);
+        if (0 == strcmp(filter->filter->name, "vpp")) {
+            /*Check if this filter is vpp*/
+            vpp = filter;
+            vpp_cnt ++;
+        }
+    }
+
+    /*
+     * If no vpp is found, we loop through the fg to check if all filters are
+     * included in 'filter_list'.
+     */
+    if (!vpp_cnt) {
+        for (int i = 0; i < fg->graph->nb_filters; i++) {
+            filter = fg->graph->filters[i];
+            if (av_match_list(filter->filter->name, filter_list, '|') <= 0) {
+                /*If this filter is not included in filter_list,
+                 * we consider it filter_more.
+                 */
+                av_log(NULL, AV_LOG_DEBUG, "non-vpp filter %s found.\n", filter->filter->name);
+                ret = AVFILTER_MORE;
+            }
+        }
+    } else if (vpp_cnt == 1) {
+        ret = AVFILTER_VPP_ONLY;
+        /*
+         * Loop through vpp's forehead filters.
+         */
+        filter = vpp->inputs[0]->src;
+        while(filter){
+            if (av_match_list(filter->filter->name, filter_list, '|') <= 0) {
+                av_log(NULL, AV_LOG_DEBUG, "non-vpp filter %s found before vpp.\n", filter->filter->name);
+                ret = AVFILTER_MORE;
+                break;
+            }
+            filter = filter->nb_inputs > 0 ? filter->inputs[0]->src : NULL;
+        }
+        /*
+         * Loop through vpp's backend filters.
+         */
+        filter = vpp->outputs[0]->dst;
+        while(filter){
+            if (av_match_list(filter->filter->name, filter_list, '|') <= 0) {
+                av_log(NULL, AV_LOG_DEBUG, "non-vpp filter %s found behind vpp.\n", filter->filter->name);
+                ret = AVFILTER_MORE;
+                break;
+            }
+            filter = filter->nb_outputs > 0 ? filter->outputs[0]->dst : NULL;
+        }
+    } else {
+        ret = AVFILTER_MORE;
+    }
+
+    return ret;
+}
+
+/*
+ * Get filter's first input stream.
+ */
+InputStream* get_ist_by_filter(FilterGraph *fg, AVFilterContext *ctx)
+{
+    AVFilterContext *filter, *filter_next;
+
+    if (!fg || !ctx || !ctx->nb_inputs)
+        return NULL;
+
+    filter = ctx->inputs[0]->src;
+    while (filter_next = (filter->nb_inputs > 0 ? filter->inputs[0]->src : NULL))
+        filter = filter_next;
+
+    for (int i=0; i<fg->nb_inputs; i++)
+        if (fg->inputs[i]->filter == filter)
+            return fg->inputs[i]->ist;
+
+    return NULL;
+}
+#endif
 
 static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out)
 {

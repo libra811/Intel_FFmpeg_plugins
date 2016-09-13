@@ -277,3 +277,24 @@ int ff_qsv_close_internal_session(QSVSession *qs)
 #endif
     return 0;
 }
+
+int ff_qsv_clone_session(mfxSession from, mfxSession *to)
+{
+    int ret = 0;
+    mfxHDL disp_hdl = NULL;
+
+    ret = MFXCloneSession(from, to);
+    if (ret != 0)
+        return ff_qsv_error(ret);
+
+    ret = MFXVideoCORE_GetHandle(from, MFX_HANDLE_VA_DISPLAY, &disp_hdl);
+    if (ret < 0)
+        return ff_qsv_error(ret);
+
+    ret = MFXVideoCORE_SetHandle(*to, MFX_HANDLE_VA_DISPLAY, disp_hdl);
+    if (ret < 0)
+        return ff_qsv_error(ret);
+
+    return 0;
+}
+
