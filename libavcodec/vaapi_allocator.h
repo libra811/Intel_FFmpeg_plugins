@@ -18,10 +18,10 @@ mfxStatus va_to_mfx_status(VAStatus va_res);
 unsigned int ConvertMfxFourccToVAFormat(mfxU32 fourcc);
 unsigned int ConvertVP8FourccToMfxFourcc(mfxU32 fourcc);
 mfxStatus CheckRequestType(mfxFrameAllocRequest *request);
-mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *request, mfxFrameAllocResponse *response);
-mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response);
-mfxStatus frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr);
-mfxStatus frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr);
-mfxStatus frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *handle);
+mfxStatus ff_qsv_frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *request, mfxFrameAllocResponse *response);
+mfxStatus ff_qsv_frame_free(mfxHDL pthis, mfxFrameAllocResponse *response);
+mfxStatus ff_qsv_frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr);
+mfxStatus ff_qsv_frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr);
+mfxStatus ff_qsv_frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *handle);
 
 #endif

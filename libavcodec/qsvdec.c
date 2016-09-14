@@ -141,11 +141,11 @@ static int codec_connect( QSVContext* qsv_dec_ctx, AVCodecContext* av_dec_ctx, A
 		ret = MFXVideoCORE_GetHandle(q->session, MFX_HANDLE_VA_DISPLAY, (mfxHDL*)&va_dpy);
 		
 		q->frame_allocator.pthis = q;
-		q->frame_allocator.Alloc = frame_alloc;
-		q->frame_allocator.Lock = frame_lock;
-		q->frame_allocator.Unlock = frame_unlock;
-		q->frame_allocator.GetHDL = frame_get_hdl;
-		q->frame_allocator.Free = frame_free;
+		q->frame_allocator.Alloc = ff_qsv_frame_alloc;
+		q->frame_allocator.Lock = ff_qsv_frame_lock;
+		q->frame_allocator.Unlock = ff_qsv_frame_unlock;
+		q->frame_allocator.GetHDL = ff_qsv_frame_get_hdl;
+		q->frame_allocator.Free = ff_qsv_frame_free;
 		
 		MFXVideoCORE_SetFrameAllocator( q->session, &q->frame_allocator );
 		av_log(NULL, AV_LOG_INFO, "DECODE: session=%p SetFrameAllocator dpy=%p\n",q->session, va_dpy);
