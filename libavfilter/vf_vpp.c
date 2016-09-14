@@ -725,11 +725,11 @@ static int initial_vpp(VPPContext *vpp)
             MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[1].session, vpp->pFrameAllocator);
         else {
             QSVContext *qsvctx = av_mallocz(sizeof(*qsvctx));
-            vpp->inter_alloc.Alloc  = frame_alloc;
-            vpp->inter_alloc.Lock   = frame_lock;
-            vpp->inter_alloc.Unlock = frame_unlock;
-            vpp->inter_alloc.GetHDL = frame_get_hdl;
-            vpp->inter_alloc.Free   = frame_free;
+            vpp->inter_alloc.Alloc  = ff_qsv_frame_alloc;
+            vpp->inter_alloc.Lock   = ff_qsv_frame_lock;
+            vpp->inter_alloc.Unlock = ff_qsv_frame_unlock;
+            vpp->inter_alloc.GetHDL = ff_qsv_frame_get_hdl;
+            vpp->inter_alloc.Free   = ff_qsv_frame_free;
             vpp->inter_alloc.pthis  = qsvctx;
             qsvctx->internal_qs = vpp->inter_vpp[0].internal_qs;
             MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[0].session, &vpp->inter_alloc);

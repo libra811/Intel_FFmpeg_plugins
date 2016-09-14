@@ -107,7 +107,7 @@ mfxStatus CheckRequestType(mfxFrameAllocRequest *request)
 }
 
 
-mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *request, mfxFrameAllocResponse *response)
+mfxStatus ff_qsv_frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *request, mfxFrameAllocResponse *response)
 {
     int i, format;
     VAStatus va_res = VA_STATUS_SUCCESS;
@@ -333,7 +333,7 @@ mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *request, mfxFrameAlloc
     return MFX_ERR_NONE;
 }
 
-mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
+mfxStatus ff_qsv_frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
 {
 
     vaapiMemId* vaapi_mids = NULL;
@@ -376,7 +376,7 @@ mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *response)
     return MFX_ERR_NONE;
 }
 
-mfxStatus frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
+mfxStatus ff_qsv_frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
 {
     mfxStatus mfx_res = MFX_ERR_NONE;
     VAStatus  va_res  = VA_STATUS_SUCCESS;
@@ -488,7 +488,7 @@ mfxStatus frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
     return mfx_res;
 }
 
-mfxStatus frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
+mfxStatus ff_qsv_frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
 {
     QSVContext* q;
     mfxU32 mfx_fourcc;
@@ -522,7 +522,7 @@ mfxStatus frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
     return MFX_ERR_NONE;
 }
 
-mfxStatus frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *handle)
+mfxStatus ff_qsv_frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *handle)
 {
     	vaapiMemId* vaapi_mid = (vaapiMemId*)mid;
 
