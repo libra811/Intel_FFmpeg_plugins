@@ -26,6 +26,7 @@
 #include <pthread.h>
 #include "libavutil/parseutils.h"
 #include "libavutil/timestamp.h"
+#include "libavutil/eval.h"
 #include "libavcodec/qsv.h"
 #include "libavcodec/qsvdec.h"
 #include "libavcodec/vaapi_allocator.h"
@@ -45,6 +46,7 @@
 #define VPP_ALIGN16(value)          (((value + 15) >> 4) << 4)          // round up to a multiple of 16
 #define VPP_ALIGN32(value)          (((value + 31) >> 5) << 5)          // round up to a multiple of 32
 #define VPP_CHECK_POINTER(P, ...)   {if (!(P)) {return __VA_ARGS__;}}
+#define VPP_FLEX_MAIN 0
 
 enum EOFAction {
     EOF_ACTION_REPEAT = 0,
@@ -80,10 +82,6 @@ static const AVOption vpp_options[] = {
     { "deinterlace", "deinterlace mode: 0=off, 1=bob, 2=advanced",             OFFSET(deinterlace),  AV_OPT_TYPE_INT, {.i64=0}, 0, MFX_DEINTERLACING_ADVANCED, .flags = FLAGS },
     { "denoise",     "denoise level [0, 100]",                                 OFFSET(denoise),      AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
     { "detail",      "detail enhancement level [0, 100]",                      OFFSET(detail),       AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
-    { "w",           "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, 0, 4096, .flags = FLAGS },
-    { "width",       "Output video width",                                     OFFSET(out_width),    AV_OPT_TYPE_INT, {.i64=0}, 0, 4096, .flags = FLAGS },
-    { "h",           "Output video height",                                    OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, 0, 2304, .flags = FLAGS },
-    { "height",      "Output video height : ",                                 OFFSET(out_height),   AV_OPT_TYPE_INT, {.i64=0}, 0, 2304, .flags = FLAGS },
     { "dpic",        "dest pic struct: 0=tff, 1=progressive [default], 2=bff", OFFSET(dpic),         AV_OPT_TYPE_INT, {.i64 = 1 }, 0, 2, .flags = FLAGS },
     { "framerate",   "output framerate",                                       OFFSET(framerate),    AV_OPT_TYPE_RATIONAL, { .dbl = 0.0 },0, DBL_MAX, .flags = FLAGS },
     { "async_depth", "Maximum processing parallelism [default = 4]",           OFFSET(async_depth),  AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, .flags = FLAGS },
@@ -95,25 +93,74 @@ static const AVOption vpp_options[] = {
     { "thumbnail",   "Enable automatic thumbnail",                             OFFSET(use_thumbnail), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
     { "thumb_interval","Thumbnail interval in frame",                          OFFSET(thumb_interval), AV_OPT_TYPE_INT, {.i64 = INT_MAX}, 1, INT_MAX, .flags = FLAGS},
     { "thumb_file",  "Thumbnail filename [default = thumbnail-%d.jpg]",        OFFSET(thumbnail_file), AV_OPT_TYPE_STRING, {.str = NULL}, 1, 128, .flags = FLAGS},
-    { "overlay_type",   "Overlay enable",                                      OFFSET(use_composite), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
-    { "main_x",      "Main x position",                                        OFFSET(layout[VPP_PAD_MAIN].DstX), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 4096, .flags = FLAGS},
-    { "main_y",      "Main y position",                                        OFFSET(layout[VPP_PAD_MAIN].DstY), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 2304, .flags = FLAGS},
-    { "main_w",      "Main width",                                             OFFSET(layout[VPP_PAD_MAIN].DstW), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 4096, .flags = FLAGS},
-    { "main_h",      "Main height",                                            OFFSET(layout[VPP_PAD_MAIN].DstH), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 2304, .flags = FLAGS},
-    { "main_alpha",  "Main global alpha",                                      OFFSET(layout[VPP_PAD_MAIN].GlobalAlpha), AV_OPT_TYPE_INT, {.i64 = 255}, 0, 255, .flags = FLAGS},
-    { "overlay_x",   "Overlay x position",                                     OFFSET(layout[VPP_PAD_OVERLAY].DstX), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 4096, .flags = FLAGS},
-    { "overlay_y",   "Overlay y position",                                     OFFSET(layout[VPP_PAD_OVERLAY].DstY), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 2304, .flags = FLAGS},
-    { "overlay_w",   "Overlay width",                                          OFFSET(layout[VPP_PAD_OVERLAY].DstW), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 4096, .flags = FLAGS},
-    { "overlay_h",   "Overlay height",                                         OFFSET(layout[VPP_PAD_OVERLAY].DstH), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 2304, .flags = FLAGS},
-    { "overlay_alpha","Overlay global alpha",                                  OFFSET(layout[VPP_PAD_OVERLAY].GlobalAlpha), AV_OPT_TYPE_INT, {.i64 = 255}, 0, 255, .flags = FLAGS},
-    { "overlay_pixel_alpha","Overlay per-piexel alpha",                        OFFSET(layout[VPP_PAD_OVERLAY].PixelAlphaEnable), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
+
+    { "w", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
+    { "width", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
+    { "h", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ih/iw"}, 0, 255, .flags = FLAGS },
+    { "height", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ih/iw"}, 0, 255, .flags = FLAGS },
+
+    { "overlay_type", "Overlay enable", OFFSET(use_composite), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
+#if VPP_FLEX_MAIN
+    { "main_x", "Main x position", OFFSET(main_ox), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "main_y", "Main y position", OFFSET(main_oy), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "main_w", "Main width", OFFSET(main_ow), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "main_h", "Main height", OFFSET(main_oh), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "main_alpha",  "Main global alpha", OFFSET(layout[VPP_PAD_MAIN].GlobalAlpha), AV_OPT_TYPE_INT, {.i64 = 255}, 0, 255, .flags = FLAGS},
+#endif
+    { "overlay_x", "Overlay x position", OFFSET(overlay_ox), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "overlay_y", "Overlay y position", OFFSET(overlay_oy), AV_OPT_TYPE_STRING, {.str="0"}, 0, 255, .flags = FLAGS},
+    { "overlay_w", "Overlay width", OFFSET(overlay_ow), AV_OPT_TYPE_STRING, {.str="overlay_iw"}, 0, 255, .flags = FLAGS},
+    { "overlay_h", "Overlay height", OFFSET(overlay_oh), AV_OPT_TYPE_STRING, {.str="overlay_ih*overlay_w/overlay_iw"}, 0, 255, .flags = FLAGS},
+    { "overlay_alpha", "Overlay global alpha", OFFSET(layout[VPP_PAD_OVERLAY].GlobalAlpha), AV_OPT_TYPE_INT, {.i64 = 255}, 0, 255, .flags = FLAGS},
+    { "overlay_pixel_alpha", "Overlay per-piexel alpha", OFFSET(layout[VPP_PAD_OVERLAY].PixelAlphaEnable), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
     { "eof_action", "Action to take when encountering EOF from overlay input", OFFSET(eof_action), AV_OPT_TYPE_INT, { .i64 = EOF_ACTION_REPEAT }, EOF_ACTION_REPEAT, EOF_ACTION_ENDALL, .flags = FLAGS, "eof_action" },
         { "repeat", "Repeat the previous frame.",   0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_REPEAT }, .flags = FLAGS, "eof_action" },
         { "endall", "End both streams.",            0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_ENDALL }, .flags = FLAGS, "eof_action" },
+
     { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(vpp);
+
+static const char *const var_names[] = {
+    "main_iw",    "iw", "in_w",
+    "main_ih",    "ih", "in_h",
+    "overlay_iw",
+    "overlay_ih",
+    "main_w",     "ow", "out_w", "w",
+    "main_h",     "oh", "out_h", "h",
+#if VPP_FLEX_MAIN
+    "main_ox",
+    "main_oy",
+    "main_ow",
+    "main_oh",
+#endif
+    "overlay_x",  "x",
+    "overlay_y",  "y",
+    "overlay_w",
+    "overlay_h",
+    NULL
+};
+
+enum var_name {
+    VAR_MAIN_iW,    VAR_iW, VAR_IN_W,
+    VAR_MAIN_iH,    VAR_iH, VAR_IN_H,
+    VAR_OVERLAY_iW,
+    VAR_OVERLAY_iH,
+    VAR_MAIN_W,     VAR_oW, VAR_OUT_W, VAR_W,
+    VAR_MAIN_H,     VAR_oH, VAR_OUT_H, VAR_H,
+#if VPP_FLEX_MAIN
+    VAR_MAIN_oX,
+    VAR_MAIN_oY,
+    VAR_MAIN_oW,
+    VAR_MAIN_oH,
+#endif
+    VAR_OVERLAY_X, VAR_X,
+    VAR_OVERLAY_Y, VAR_Y,
+    VAR_OVERLAY_W,
+    VAR_OVERLAY_H,
+    VAR_VARS_NB
+};
 
 static int option_id_to_mfx_pic_struct(int id)
 {
@@ -1031,39 +1078,144 @@ static int fs_process_frame(FFFrameSync *fs)
     return ret;
 }
 
+static int eval_expr(AVFilterContext *ctx)
+{
+#define PASS_EXPR(e, s) {\
+    ret = av_expr_parse(&e, s, var_names, NULL, NULL, NULL, NULL, 0, ctx); \
+    if (ret < 0) {\
+        av_log(ctx, AV_LOG_ERROR, "Error when passing '%s'.\n", s);\
+        return ret;\
+    }\
+}
+#define CALC_EXPR(e, v, i) {\
+    i = v = av_expr_eval(e, var_values, NULL); \
+}
+    VPPContext *vpp = ctx->priv;
+    double  var_values[VAR_VARS_NB] = { NAN };
+    AVExpr *w_expr = NULL, *h_expr = NULL;
+#if VPP_FLEX_MAIN
+    AVExpr *mx_expr = NULL, *my_expr = NULL;
+    AVExpr *mw_expr = NULL, *mh_expr = NULL;
+#endif
+    AVExpr *ox_expr = NULL, *oy_expr = NULL;
+    AVExpr *ow_expr = NULL, *oh_expr = NULL;
+    int     ret = 0;
+
+    /*
+     * Pass expressions into AVExpr
+     */
+    PASS_EXPR(w_expr, vpp->ow);
+    PASS_EXPR(h_expr, vpp->oh);
+#if VPP_FLEX_MAIN
+    PASS_EXPR(mx_expr, vpp->main_ox);
+    PASS_EXPR(my_expr, vpp->main_oy);
+    PASS_EXPR(mw_expr, vpp->main_ow);
+    PASS_EXPR(mh_expr, vpp->main_oh);
+#endif
+    PASS_EXPR(ox_expr, vpp->overlay_ox);
+    PASS_EXPR(oy_expr, vpp->overlay_oy);
+    PASS_EXPR(ow_expr, vpp->overlay_ow);
+    PASS_EXPR(oh_expr, vpp->overlay_oh);
+
+    /*
+     * Fill constant values.
+     * iW and iH are fixed values.
+     */
+    var_values[VAR_iW] =
+    var_values[VAR_MAIN_iW] =
+    var_values[VAR_IN_W] = ctx->inputs[VPP_PAD_MAIN]->w;
+
+    var_values[VAR_iH] =
+    var_values[VAR_MAIN_iH] =
+    var_values[VAR_IN_H] = ctx->inputs[VPP_PAD_MAIN]->h;
+
+    if (ctx->nb_inputs > 1) {
+        var_values[VAR_OVERLAY_iW] = ctx->inputs[VPP_PAD_OVERLAY]->w;
+        var_values[VAR_OVERLAY_iH] = ctx->inputs[VPP_PAD_OVERLAY]->h;
+    } else {
+        var_values[VAR_OVERLAY_iW] = NAN;
+        var_values[VAR_OVERLAY_iH] = NAN;
+    }
+
+    /*
+     * Calc the user-defined values.
+     */
+    CALC_EXPR(w_expr,
+            var_values[VAR_MAIN_W] = var_values[VAR_OUT_W] = var_values[VAR_oW] = var_values[VAR_W],
+            vpp->out_width);
+    CALC_EXPR(h_expr,
+            var_values[VAR_MAIN_H] = var_values[VAR_OUT_H] = var_values[VAR_oH] = var_values[VAR_H],
+            vpp->out_height);
+    ///calc again in case ow is relative to oh
+    CALC_EXPR(w_expr,
+            var_values[VAR_MAIN_W] = var_values[VAR_OUT_W] = var_values[VAR_oW] = var_values[VAR_W],
+            vpp->out_width);
+
+#if VPP_FLEX_MAIN
+    CALC_EXPR(mw_expr, var_values[VAR_MAIN_oW], vpp->layout[VPP_PAD_MAIN].DstW);
+    CALC_EXPR(mh_expr, var_values[VAR_MAIN_oH], vpp->layout[VPP_PAD_MAIN].DstH);
+    CALC_EXPR(mw_expr, var_values[VAR_MAIN_oW], vpp->layout[VPP_PAD_MAIN].DstW);
+
+    CALC_EXPR(mx_expr, var_values[VAR_MAIN_oX], vpp->layout[VPP_PAD_MAIN].DstX);
+    CALC_EXPR(my_expr, var_values[VAR_MAIN_oY], vpp->layout[VPP_PAD_MAIN].DstY);
+    CALC_EXPR(mx_expr, var_values[VAR_MAIN_oX], vpp->layout[VPP_PAD_MAIN].DstX);
+
+    CALC_EXPR(mw_expr, var_values[VAR_MAIN_oW], vpp->layout[VPP_PAD_MAIN].DstW);
+    CALC_EXPR(mh_expr, var_values[VAR_MAIN_oH], vpp->layout[VPP_PAD_MAIN].DstH);
+    CALC_EXPR(mw_expr, var_values[VAR_MAIN_oW], vpp->layout[VPP_PAD_MAIN].DstW);
+#endif
+
+    CALC_EXPR(ow_expr, var_values[VAR_OVERLAY_W], vpp->layout[VPP_PAD_OVERLAY].DstW);
+    CALC_EXPR(oh_expr, var_values[VAR_OVERLAY_H], vpp->layout[VPP_PAD_OVERLAY].DstH);
+    ///calc again in case ow is relative to oh
+    CALC_EXPR(ow_expr, var_values[VAR_OVERLAY_W], vpp->layout[VPP_PAD_OVERLAY].DstW);
+
+    CALC_EXPR(ox_expr,
+            var_values[VAR_OVERLAY_X] = var_values[VAR_X],
+            vpp->layout[VPP_PAD_OVERLAY].DstX);
+    CALC_EXPR(oy_expr,
+            var_values[VAR_OVERLAY_Y] = var_values[VAR_Y],
+            vpp->layout[VPP_PAD_OVERLAY].DstY);
+    ///calc again in case ox is relative to oy
+    CALC_EXPR(ox_expr,
+            var_values[VAR_OVERLAY_X] = var_values[VAR_X],
+            vpp->layout[VPP_PAD_OVERLAY].DstX);
+
+    CALC_EXPR(ow_expr, var_values[VAR_OVERLAY_W], vpp->layout[VPP_PAD_OVERLAY].DstW);
+    CALC_EXPR(oh_expr, var_values[VAR_OVERLAY_H], vpp->layout[VPP_PAD_OVERLAY].DstH);
+    ///calc again in case ow is relative to oh
+    CALC_EXPR(ow_expr, var_values[VAR_OVERLAY_W], vpp->layout[VPP_PAD_OVERLAY].DstW);
+
+    av_expr_free(w_expr);
+    av_expr_free(h_expr);
+#if VPP_FLEX_MAIN
+    av_expr_free(mx_expr);
+    av_expr_free(my_expr);
+    av_expr_free(mw_expr);
+    av_expr_free(mh_expr);
+#endif
+    av_expr_free(ox_expr);
+    av_expr_free(oy_expr);
+    av_expr_free(ow_expr);
+    av_expr_free(oh_expr);
+
+#undef PASS_EXPR
+#undef CALC_EXPR
+
+    return ret;
+}
+
 /*
  * Configure each inputs.
  */
 static int config_input(AVFilterLink *inlink)
 {
-    AVFilterContext          *ctx = inlink->dst;
-    VPPContext               *vpp = ctx->priv;
-    int                       idx = FF_INLINK_IDX(inlink);
+    AVFilterContext *ctx = inlink->dst;
+    VPPContext      *vpp = ctx->priv;
+    int              idx = FF_INLINK_IDX(inlink);
 
     av_log(ctx, AV_LOG_DEBUG, "Input[%d]'s format is %s, size %dx%d\n", idx,
             av_get_pix_fmt_name(inlink->format), inlink->w, inlink->h);
-
-    /*
-     * Take main input's framerate as default.
-     */
-    if (VPP_PAD_MAIN == idx) {
-        if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
-            vpp->framerate = inlink->frame_rate;
-
-        /*
-         * if out_w is not set(<=0), we calc it based on out_h;
-         * if out_h is not set(<=0), we calc it based on out_w;
-         * if both are not set, we set out_rect = in_rect.
-         */
-        if (vpp->out_width <= 0)
-            vpp->out_width  = av_rescale(vpp->out_height, inlink->w, inlink->h);
-        if (vpp->out_height <= 0)
-            vpp->out_height = av_rescale(vpp->out_width, inlink->h, inlink->w);
-        if (vpp->out_height <= 0 || vpp->out_width <= 0) {
-            vpp->out_width  = inlink->w;
-            vpp->out_height = inlink->h;
-        }
-    }
 
     if (vpp->layout[idx].GlobalAlpha < 255)
         vpp->layout[idx].GlobalAlphaEnable = 1;
@@ -1074,13 +1226,12 @@ static int config_input(AVFilterLink *inlink)
             vpp->layout[idx].GlobalAlphaEnable = 0;
     }
 
-    /*
-     * By default, when multi-input, overlay_out_rect = overlay_in_rect
-     */
-    if (!vpp->layout[idx].DstW || !vpp->layout[idx].DstH) {
-        vpp->layout[idx].DstW = FFMIN(inlink->w, vpp->out_width - (int)vpp->layout[idx].DstX);
-        vpp->layout[idx].DstH = FFMIN(inlink->h, vpp->out_height - (int)vpp->layout[idx].DstY);
+#if !VPP_FLEX_MAIN
+    if (idx == VPP_PAD_MAIN) {
+        vpp->layout[idx].GlobalAlphaEnable = 0;
+        vpp->layout[idx].PixelAlphaEnable  = 0;
     }
+#endif
 
     return 0;
 }
@@ -1090,16 +1241,47 @@ static int config_output(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     VPPContext      *vpp = ctx->priv;
     int              idx = 0;
+    AVFilterLink    *main_in = ctx->inputs[VPP_PAD_MAIN];
+    int              ret = 0;
 
-    outlink->w             = vpp->out_width;
-    outlink->h             = vpp->out_height;
-    outlink->frame_rate    = vpp->framerate;
-    outlink->time_base     = av_inv_q(vpp->framerate);
-    outlink->format        = AV_PIX_FMT_NV12;
+    ret = eval_expr(ctx);
+    if (ret != 0)
+        return ret;
+
+    /*
+     * Take main input's framerate as default.
+     */
+    if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
+        vpp->framerate = main_in->frame_rate;
+
+    /*
+     * if out_w is not set(<=0), we calc it based on out_h;
+     * if out_h is not set(<=0), we calc it based on out_w;
+     * if both are not set, we set out_rect = in_rect.
+     */
+    if (vpp->out_width <= 0)
+        vpp->out_width  = av_rescale(vpp->out_height, main_in->w, main_in->h);
+    if (vpp->out_height <= 0)
+        vpp->out_height = av_rescale(vpp->out_width, main_in->h, main_in->w);
+    if (vpp->out_height <= 0 || vpp->out_width <= 0) {
+        vpp->out_width  = main_in->w;
+        vpp->out_height = main_in->h;
+    }
+
     /*
      * Check if any pad's layout is out of range.
      */
     for (idx = 0; idx < ctx->nb_inputs; idx++) {
+        /*
+         * By default, when multi-input, overlay_out_rect = overlay_in_rect
+         */
+        if (!vpp->layout[idx].DstW || !vpp->layout[idx].DstH) {
+            vpp->layout[idx].DstW =
+                    FFMIN(ctx->inputs[idx]->w, vpp->out_width - vpp->layout[idx].DstX);
+            vpp->layout[idx].DstH =
+                    FFMIN(ctx->inputs[idx]->h, vpp->out_height - vpp->layout[idx].DstY);
+        }
+
         if ((vpp->layout[idx].DstW > vpp->out_width) ||
             (vpp->layout[idx].DstH > vpp->out_height) ||
             (vpp->layout[idx].DstX + vpp->layout[idx].DstW > vpp->out_width) ||
@@ -1109,6 +1291,12 @@ static int config_output(AVFilterLink *outlink)
             return AVERROR(EINVAL);
         }
     }
+
+    outlink->w             = vpp->out_width;
+    outlink->h             = vpp->out_height;
+    outlink->frame_rate    = vpp->framerate;
+    outlink->time_base     = av_inv_q(vpp->framerate);
+    outlink->format        = AV_PIX_FMT_NV12;
 
     return 0;
 }
