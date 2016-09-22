@@ -120,6 +120,9 @@ typedef struct {
     int use_thumbnail;
     int use_composite;          // 1 = use composite; 0=none
     mfxVPPCompInputStream layout[VPP_PAD_NUM];
+    char *ow, *oh;
+    char *main_ox, *main_oy, *main_ow, *main_oh;
+    char *overlay_ox, *overlay_oy, *overlay_ow, *overlay_oh;
     AVRational framerate;       // target framerate
     int eof_action;             // actions when encountering EOF of overlay
 } VPPContext;
