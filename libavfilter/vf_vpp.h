@@ -90,6 +90,7 @@ typedef struct {
     FFFrameSync       *fs;
     int                frame_number;
     int                vpp_ready;
+    int64_t            first_pts;
 
     /* Video Enhancement Algorithms */
     mfxExtVPPDeinterlacing  deinterlace_conf;
