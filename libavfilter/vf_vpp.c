@@ -1327,6 +1327,18 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
     if (link_idx != VPP_PAD_MAIN)
         ret = ff_framesync_filter_frame(vpp->fs, inlink, picref);
     else {
+        if (vpp->use_frc) {
+            if (vpp->first_pts == AV_NOPTS_VALUE)
+                vpp->first_pts = picref->pts;
+            else {
+                int delta = av_rescale_q(picref->pts - vpp->first_pts,
+                        (AVRational){1, 90000}, av_inv_q(vpp->framerate)) - vpp->frame_number;
+                if (delta < 0){
+                    av_frame_free(&picref);
+                    return 0;
+                }
+            }
+        }
         ret = process_frame(inlink, 0, picref);
         av_frame_free(&picref);
     }
@@ -1398,6 +1410,7 @@ static av_cold int vpp_init(AVFilterContext *ctx)
     vpp->thm_framebuffer = av_fifo_alloc(sizeof(AVFrame*)*8);
     vpp->task_exit       = 0;
     vpp->thm_pendding    = 0;
+    vpp->first_pts        = AV_NOPTS_VALUE;
     if(!vpp->thumbnail_file)
         vpp->thumbnail_file = av_strdup("thumbnail-%d.jpg");
     pthread_create(&vpp->thumbnail_task, NULL, thumbnail_task, ctx->priv);
