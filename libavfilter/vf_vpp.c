@@ -349,6 +349,10 @@ static int vidmem_output_get_surface( AVFilterLink *inlink, mfxFrameSurface1 **s
 
 static int init_vpp_param( VPPContext *vpp, int format, int input_w, int input_h, int frame_rate_num, int frame_rate_den, int pic_struct )
 {
+    if (!(frame_rate_num*frame_rate_den)) {
+        frame_rate_den = vpp->framerate.den;
+        frame_rate_num = vpp->framerate.num;
+    }
     // input data
     vpp->pVppParam->vpp.In.FourCC = avpix_fmt_to_mfx_fourcc(format);
     vpp->pVppParam->vpp.In.ChromaFormat = get_chroma_fourcc(vpp->pVppParam->vpp.In.FourCC);
@@ -654,6 +658,8 @@ static int config_input(AVFilterLink *inlink)
         av_get_pix_fmt_name(inlink->format));
     if(vpp->framerate.den == 0 || vpp->framerate.num == 0)
         vpp->framerate = inlink->frame_rate;
+    if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
+        vpp->framerate = (AVRational){25, 1};
 
     /*By default, out_rect = main_in_rect*/
     if(vpp->out_height == 0 || vpp->out_width == 0){
