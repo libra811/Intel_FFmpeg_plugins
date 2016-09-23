@@ -56,7 +56,7 @@ static int h264_find_frame_end(H264ParseContext *p, const uint8_t *buf,
         state = 7;
 
     if (h->is_avc && !h->nal_length_size)
-        av_log(h->avctx, AV_LOG_ERROR, "AVC-parser: nal length size invalid\n");
+        av_log(h->avctx, AV_LOG_VERBOSE, "AVC-parser: nal length size invalid\n");
 
     for (i = 0; i < buf_size; i++) {
         if (i >= next_avc) {
@@ -65,7 +65,7 @@ static int h264_find_frame_end(H264ParseContext *p, const uint8_t *buf,
             for (j = 0; j < h->nal_length_size; j++)
                 nalsize = (nalsize << 8) | buf[i++];
             if (nalsize <= 0 || nalsize > buf_size - i) {
-                av_log(h->avctx, AV_LOG_ERROR, "AVC-parser: nal size %d remaining %d\n", nalsize, buf_size - i);
+                av_log(h->avctx, AV_LOG_VERBOSE, "AVC-parser: nal size %d remaining %d\n", nalsize, buf_size - i);
                 return buf_size;
             }
             next_avc = i + nalsize;
@@ -153,7 +153,7 @@ static int scan_mmco_reset(AVCodecParserContext *s)
                     if (reordering_of_pic_nums_idc < 3)
                         get_ue_golomb(&h->gb);
                     else if (reordering_of_pic_nums_idc > 3) {
-                        av_log(h->avctx, AV_LOG_ERROR,
+                        av_log(h->avctx, AV_LOG_VERBOSE,
                                "illegal reordering_of_pic_nums_idc %d\n",
                                reordering_of_pic_nums_idc);
                         return AVERROR_INVALIDDATA;
@@ -161,7 +161,7 @@ static int scan_mmco_reset(AVCodecParserContext *s)
                         break;
 
                     if (index >= h->ref_count[list]) {
-                        av_log(h->avctx, AV_LOG_ERROR,
+                        av_log(h->avctx, AV_LOG_VERBOSE,
                                "reference count %d overflow\n", index);
                         return AVERROR_INVALIDDATA;
                     }
@@ -179,7 +179,7 @@ static int scan_mmco_reset(AVCodecParserContext *s)
         for (i = 0; i < MAX_MMCO_COUNT; i++) {
             MMCOOpcode opcode = get_ue_golomb_31(&h->gb);
             if (opcode > (unsigned) MMCO_LONG) {
-                av_log(h->avctx, AV_LOG_ERROR,
+                av_log(h->avctx, AV_LOG_VERBOSE,
                        "illegal memory management control operation %d\n",
                        opcode);
                 return AVERROR_INVALIDDATA;
@@ -306,18 +306,18 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             }
             pps_id = get_ue_golomb(&h->gb);
             if (pps_id >= MAX_PPS_COUNT) {
-                av_log(h->avctx, AV_LOG_ERROR,
+                av_log(h->avctx, AV_LOG_VERBOSE,
                        "pps_id %u out of range\n", pps_id);
                 return -1;
             }
             if (!h->pps_buffers[pps_id]) {
-                av_log(h->avctx, AV_LOG_ERROR,
+                av_log(h->avctx, AV_LOG_VERBOSE,
                        "non-existing PPS %u referenced\n", pps_id);
                 return -1;
             }
             h->pps = *h->pps_buffers[pps_id];
             if (!h->sps_buffers[h->pps.sps_id]) {
-                av_log(h->avctx, AV_LOG_ERROR,
+                av_log(h->avctx, AV_LOG_VERBOSE,
                        "non-existing SPS %u referenced\n", h->pps.sps_id);
                 return -1;
             }
@@ -484,7 +484,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     if (q264)
         return 0;
     /* didn't find a picture! */
-    av_log(h->avctx, AV_LOG_ERROR, "missing picture in access unit with size %d\n", buf_size);
+    av_log(h->avctx, AV_LOG_VERBOSE, "missing picture in access unit with size %d\n", buf_size);
     return -1;
 }
 
