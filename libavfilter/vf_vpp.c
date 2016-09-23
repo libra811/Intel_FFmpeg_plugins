@@ -576,6 +576,11 @@ static int output_get_surface( AVFilterLink *inlink, int vppidx, AVFrame *frame,
 static int init_vpp_param(VPPContext *vpp, int format, int input_w, int input_h,
         int frame_rate_num, int frame_rate_den, int pic_struct )
 {
+    if (!(frame_rate_num*frame_rate_den)) {
+        frame_rate_den = vpp->framerate.den;
+        frame_rate_num = vpp->framerate.num;
+    }
+
     if (vpp->framerate.num * frame_rate_den != vpp->framerate.den * frame_rate_num)
         vpp->use_frc = 1;
     else
@@ -1253,6 +1258,8 @@ static int config_output(AVFilterLink *outlink)
      */
     if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
         vpp->framerate = main_in->frame_rate;
+    if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
+        vpp->framerate = (AVRational){25, 1};
 
     /*
      * if out_w is not set(<=0), we calc it based on out_h;
