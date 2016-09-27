@@ -149,7 +149,6 @@ static int ff_qsv_set_display_handle(AVCodecContext *avctx, QSVSession *qs)
                 "Error %d during set display handle\n", ret);
                 return ff_qsv_error(ret);
             }
-            printf("qs->va_dispaly=%p\n",qs->va_display);
             break;
         }
     }
