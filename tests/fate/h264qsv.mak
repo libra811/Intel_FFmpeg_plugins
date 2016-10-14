@@ -178,7 +178,7 @@ fate-qsv-h264: $(FATE_QSV_H264-yes)
 fate-qsv-h264-conformance-aud_mw_e:                   CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/AUD_MW_E.264 -pix_fmt yuv420p
 
 #force framerate so that the option is tested, theres no other case that tests it, its not needed at all otherwise here
-#TMP fate-qsv-h264-conformance-ba1_ft_c:                           CMD = framecrc -framerate 19 -i $(TARGET_SAMPLES)/h264-conformance/BA1_FT_C.264 -pix_fmt yuv420p
+fate-qsv-h264-conformance-ba1_ft_c:                           CMD = framecrc -framerate 19 -i $(TARGET_SAMPLES)/h264-conformance/BA1_FT_C.264 -pix_fmt yuv420p
 
 fate-qsv-h264-conformance-ba1_sony_d:                 CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/BA1_Sony_D.jsv -pix_fmt yuv420p
 fate-qsv-h264-conformance-ba2_sony_f:                 CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/BA2_Sony_F.jsv -pix_fmt yuv420p
@@ -263,7 +263,7 @@ fate-qsv-h264-conformance-cvpa1_toshiba_b:            CMD = framecrc -vsync drop
 fate-qsv-h264-conformance-cvpcmnl1_sva_c:             CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVPCMNL1_SVA_C.264 -pix_fmt yuv420p
 fate-qsv-h264-conformance-cvpcmnl2_sva_c:             CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVPCMNL2_SVA_C.264 -pix_fmt yuv420p
 fate-qsv-h264-conformance-cvwp1_toshiba_e:            CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVWP1_TOSHIBA_E.264 -pix_fmt yuv420p
-#TMP fate-qsv-h264-conformance-cvwp2_toshiba_e:            CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVWP2_TOSHIBA_E.264 -pix_fmt yuv420p
+TMP fate-qsv-h264-conformance-cvwp2_toshiba_e:            CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVWP2_TOSHIBA_E.264 -pix_fmt yuv420p
 fate-qsv-h264-conformance-cvwp3_toshiba_e:            CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVWP3_TOSHIBA_E.264 -pix_fmt yuv420p
 fate-qsv-h264-conformance-cvwp5_toshiba_e:            CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/CVWP5_TOSHIBA_E.264 -pix_fmt yuv420p
 fate-qsv-h264-conformance-fi1_sony_e:                 CMD = framecrc -vsync drop -c:v h264_qsv -i $(TARGET_SAMPLES)/h264-conformance/FI1_Sony_E.jsv -pix_fmt yuv420p
