@@ -1248,6 +1248,7 @@ static int config_output(AVFilterLink *outlink)
     int              idx = 0;
     AVFilterLink    *main_in = ctx->inputs[VPP_PAD_MAIN];
     int              ret = 0;
+    AVCodec         *codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
 
     ret = eval_expr(ctx);
     if (ret != 0)
@@ -1305,7 +1306,33 @@ static int config_output(AVFilterLink *outlink)
     outlink->time_base     = av_inv_q(vpp->framerate);
     outlink->format        = AV_PIX_FMT_NV12;
 
-    return 0;
+    vpp->thm_swsctx = sws_getContext(outlink->w, outlink->h, outlink->format,
+            outlink->w, outlink->h, AV_PIX_FMT_YUVJ420P,
+            SWS_BICUBIC, NULL, NULL, NULL);
+    if (NULL == vpp->thm_swsctx) {
+        av_log(ctx, AV_LOG_WARNING, "Swscale init failed.\n");
+        return 0;
+    }
+
+    ret = avformat_alloc_output_context2(&vpp->thm_mux, NULL, "mjpeg", NULL);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_WARNING, "mux init failed with %s.\n", av_err2str(ret));
+        return 0;
+    }
+
+    vpp->thm_stream        = avformat_new_stream(vpp->thm_mux, codec);
+    vpp->thm_enc           = vpp->thm_stream->codec;
+    vpp->thm_enc->width    = outlink->w;
+    vpp->thm_enc->height   = outlink->h;
+    vpp->thm_enc->pix_fmt  = AV_PIX_FMT_YUVJ420P;
+    vpp->thm_stream->time_base = vpp->thm_enc->time_base = av_inv_q(vpp->framerate);
+    ret = avcodec_open2(vpp->thm_enc, vpp->thm_enc->codec, NULL);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_WARNING, "Thumbnail encoder init failed.\n");
+        return 0;
+    }
+
+    return ret;
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
