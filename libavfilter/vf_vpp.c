@@ -86,13 +86,19 @@ enum EOFAction {
     { "framerate",   "output framerate",                                       OFFSET(framerate),    AV_OPT_TYPE_RATIONAL, { .dbl = 0.0 },0, DBL_MAX, .flags = FLAGS },
     { "async_depth", "Maximum processing parallelism [default = 4]",           OFFSET(async_depth),  AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, .flags = FLAGS },
     { "max_b_frames","Maximum number of b frames  [default = 3]",              OFFSET(max_b_frames), AV_OPT_TYPE_INT, { .i64 = 3 }, 0, INT_MAX, .flags = FLAGS },
-    { "gpu_copy", "Enable gpu copy in sysmem mode [default = off]", OFFSET(inter_vpp[0].internal_qs.gpu_copy), AV_OPT_TYPE_INT, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = FLAGS, "gpu_copy" },
+    { "gpu_copy", "Enable gpu copy in sysmem mode [default = off]",            OFFSET(inter_vpp[0].internal_qs.gpu_copy), AV_OPT_TYPE_INT, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = FLAGS, "gpu_copy" },
     { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_DEFAULT }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = FLAGS, "gpu_copy" },
     { "on", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_ON }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = FLAGS, "gpu_copy" },
     { "off", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = FLAGS, "gpu_copy" },
     { "thumbnail",   "Enable automatic thumbnail",                             OFFSET(use_thumbnail), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
     { "thumb_interval","Thumbnail interval in frame",                          OFFSET(thumb_interval), AV_OPT_TYPE_INT, {.i64 = INT_MAX}, 1, INT_MAX, .flags = FLAGS},
     { "thumb_file",  "Thumbnail filename [default = thumbnail-%d.jpg]",        OFFSET(thumbnail_file), AV_OPT_TYPE_STRING, {.str = NULL}, 1, 128, .flags = FLAGS},
+
+    { "procamp",     "Enable ProcAmp",                                         OFFSET(procamp),    AV_OPT_TYPE_INT,   {.i64 = 0}, 0, 1, .flags = FLAGS},
+    { "hue",         "ProcAmp hue",                                            OFFSET(hue),        AV_OPT_TYPE_FLOAT, {.dbl = 0.0 }, -180.0, 180.0, .flags = FLAGS},
+    { "saturation",  "ProcAmp saturation",                                     OFFSET(saturation), AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, 0.0, 10.0, .flags = FLAGS},
+    { "contrast",    "ProcAmp contrast",                                       OFFSET(contrast),   AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, 0.0, 10.0, .flags = FLAGS},
+    { "brightness",  "ProcAmp brightness",                                     OFFSET(brightness), AV_OPT_TYPE_FLOAT, {.dbl = 0.0 }, -100.0, 100.0, .flags = FLAGS},
 
     { "w", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
     { "width", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
@@ -659,6 +665,20 @@ static int init_vpp_param(VPPContext *vpp, int format, int input_w, int input_h,
 
         vpp->inter_vpp[0].pVppParam->ExtParam[vpp->inter_vpp[0].pVppParam->NumExtParam++]
                 = (mfxExtBuffer*)&(vpp->detail_conf);
+    }
+
+    if (vpp->procamp) {
+        av_log(vpp->ctx, AV_LOG_DEBUG, "ProcAmp enabled\n");
+        memset(&vpp->procamp_conf, 0, sizeof(mfxExtVPPProcAmp));
+        vpp->procamp_conf.Header.BufferId  = MFX_EXTBUFF_VPP_PROCAMP;
+        vpp->procamp_conf.Header.BufferSz  = sizeof(mfxExtVPPProcAmp);
+        vpp->procamp_conf.Hue              = vpp->hue;
+        vpp->procamp_conf.Saturation       = vpp->saturation;
+        vpp->procamp_conf.Contrast         = vpp->contrast;
+        vpp->procamp_conf.Brightness       = vpp->brightness;
+
+        vpp->inter_vpp[0].pVppParam->ExtParam[vpp->inter_vpp[0].pVppParam->NumExtParam++]
+                = (mfxExtBuffer*)&(vpp->procamp_conf);
     }
 
     /*

@@ -97,6 +97,7 @@ typedef struct {
     mfxExtVPPFrameRateConversion frc_conf;
     mfxExtVPPDenoise denoise_conf;
     mfxExtVPPDetail detail_conf;
+    mfxExtVPPProcAmp procamp_conf;
     mfxExtVPPComposite composite_conf;
 
     /*user-defined parameters*/
@@ -119,6 +120,14 @@ typedef struct {
     char *thumbnail_file;
     int thumb_interval;
     int use_thumbnail;
+
+    /* param for the procamp */
+    int    procamp;            //enable the procamp
+    float  hue;
+    float  saturation;
+    float  contrast;
+    float  brightness;
+
     int use_composite;          // 1 = use composite; 0=none
     mfxVPPCompInputStream layout[VPP_PAD_NUM];
     char *ow, *oh;
