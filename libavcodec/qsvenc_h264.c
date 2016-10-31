@@ -116,6 +116,19 @@ static const AVOption options[] = {
     { "on", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_ON }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
     { "off", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_GPUCOPY_OFF }, MFX_GPUCOPY_DEFAULT, MFX_GPUCOPY_OFF, .flags = VE, "gpu_copy" },
 
+    { "ratedisopt",    "Set this flag if rate distortion optimization is needed", OFFSET(qsv.rate_distor_opt), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "cavlc",         "Set, CAVLC is used; if unset, CABAC is used for encoding", OFFSET(qsv.cavlc), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "nalhrdcon",     "Set ON then AVC encoder produces HRD conformant bitstream", OFFSET(qsv.nal_hrd_con), AV_OPT_TYPE_INT, { .i64 = 0}, 0, 1, VE },
+    { "singlseinal",   "Set, encoder puts all SEI messages in the singe NAL unit", OFFSET(qsv.single_sei_nal), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "resetreflist",  "Set this flag to reset the reference list to non-IDR I-frames of a GOP sequence", OFFSET(qsv.reset_reflist), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "refpicmarkrep", "Set this flag to write the reference picture marking repetition SEI message into the output bitstream", OFFSET(qsv.ref_pic_mark_rep), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "fieldoutput",   "Set this flag to instruct the AVC encoder to output bitstreams immediately after the encoder encodes a field", OFFSET(qsv.field_output), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "maxdecframebuffering", "Specifies the maximum number of frames buffered in a DPB", OFFSET(qsv.max_dec_frame_buffering), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "audelimiter",    "Set this flag to insert the Access Unit Delimiter NAL", OFFSET(qsv.audelimiter), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "vuinalhrdparam", "Set this flag to insert NAL HRD parameters in the VUI header", OFFSET(qsv.vui_nal_hrd_parameters), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "framepicture",   "Set this flag to encode interlaced fields as interlaced frames", OFFSET(qsv.frame_picture), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "recoverypointSEI", "Set this flag to insert the recovery point SEI message at the beginning of every intra refresh cycle", OFFSET(qsv.recovery_pointSEI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+
     { NULL },
 };
 
