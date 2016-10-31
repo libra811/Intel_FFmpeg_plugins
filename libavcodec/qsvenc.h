@@ -83,6 +83,21 @@ typedef struct QSVEncContext {
     int MBBRC;
     int BRefControl;
 
+    // options for mfxExtCodingOption
+    int rate_distor_opt;
+    int cavlc;
+    int nal_hrd_con;
+    int single_sei_nal;
+    int reset_reflist;
+    int ref_pic_mark_rep;
+    int field_output;
+    int max_dec_frame_buffering;
+    int audelimiter;
+    int vui_nal_hrd_parameters;
+    int frame_picture;
+    int recovery_pointSEI;
+
+
     char *load_plugins;
 } QSVEncContext;
 

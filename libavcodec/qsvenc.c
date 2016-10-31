@@ -200,6 +200,20 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->extco.PicTimingSEI         = q->pic_timing_sei ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
 
+#if  1
+       q->extco.RateDistortionOpt     = q->rate_distor_opt ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.CAVLC                 = q->cavlc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.NalHrdConformance     = q->nal_hrd_con ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.SingleSeiNalUnit      = q->single_sei_nal ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.ResetRefList          = q->reset_reflist ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.RefPicMarkRep         = q->ref_pic_mark_rep ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.FieldOutput           = q->field_output ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.MaxDecFrameBuffering  = q->max_dec_frame_buffering ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.AUDelimiter           = q->audelimiter ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.VuiNalHrdParameters   = q->vui_nal_hrd_parameters ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.FramePicture          = q->frame_picture ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+       q->extco.RecoveryPointSEI      = q->recovery_pointSEI ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+#endif
         q->extparam[0] = (mfxExtBuffer *)&q->extco;
 
 #if QSV_VERSION_ATLEAST(1,6)
