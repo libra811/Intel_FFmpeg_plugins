@@ -97,6 +97,21 @@ typedef struct QSVEncContext {
     int frame_picture;
     int recovery_pointSEI;
 
+    // options for mfxExtCodingOption2
+    unsigned short intref_cyclesize;
+    short intref_QPdelta;
+    int maxframesize;
+    int maxslicesize;
+    unsigned short trellis;
+    unsigned short repeatPPS_off;
+    unsigned short adaptiveI;
+    unsigned short adaptiveB;
+    unsigned short numMb_per_slice;
+    unsigned short fixed_framerate;
+    unsigned short disable_VUI;
+    unsigned short buffing_periodSEI;
+    unsigned short enableMAD;
+    unsigned short use_raw_ref;
 
     char *load_plugins;
 } QSVEncContext;

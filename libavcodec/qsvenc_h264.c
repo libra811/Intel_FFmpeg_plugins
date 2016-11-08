@@ -129,6 +129,21 @@ static const AVOption options[] = {
     { "framepicture",   "Set this flag to encode interlaced fields as interlaced frames", OFFSET(qsv.frame_picture), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "recoverypointSEI", "Set this flag to insert the recovery point SEI message at the beginning of every intra refresh cycle", OFFSET(qsv.recovery_pointSEI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
 
+    { "intrefcyclesize",   "Specifies number of pictures within refresh cycle", OFFSET(qsv.intref_cyclesize), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, INT_MAX, VE },
+    { "intrefQPdelta",     "Specifies QP difference for inserted intra MBs", OFFSET(qsv.intref_QPdelta), AV_OPT_TYPE_INT, { .i64 = 0 }, -51, 51, VE },
+    { "maxframesize",      "Specify maximum encoded frame size in byte used in AVBR/VBR", OFFSET(qsv.maxframesize), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "maxslicesize",      "Specify maximum slice size in bytes", OFFSET(qsv.maxslicesize), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "trellis",           "Used to control trellis quantization in AVC", OFFSET(qsv.trellis), AV_OPT_TYPE_INT, { .i64 = MFX_TRELLIS_UNKNOWN }, MFX_TRELLIS_UNKNOWN, MFX_TRELLIS_I | MFX_TRELLIS_P | MFX_TRELLIS_B, VE },
+    { "repeatPPS",         "The default is on and set flag will off the repetition", OFFSET(qsv.repeatPPS_off), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "adaptiveI",         "his flag controls insertion of I frames by the SDK encoder", OFFSET(qsv.adaptiveI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "adaptiveB",         "This flag controls changing of frame type from B to P", OFFSET(qsv.adaptiveB), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "numMbperslice",     "This option specifies suggested slice size in number of macroblocks", OFFSET(qsv.numMb_per_slice), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "fixedframerate",    "This option sets fixed_frame_rate_flag in VUI", OFFSET(qsv.fixed_framerate), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "disableVUI",        "This option sets fixed_frame_rate_flag in VUI", OFFSET(qsv.disable_VUI), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "bufferPeriodSEI","This option controls insertion of buffering period SEI in the encoded bitstrea", OFFSET(qsv.buffing_periodSEI), AV_OPT_TYPE_INT, { .i64 = MFX_BPSEI_DEFAULT }, MFX_BPSEI_DEFAULT, MFX_BPSEI_IFRAME, VE },
+    { "enableMAD",         "Turn ON this flag to enable per-frame reporting of MAD", OFFSET(qsv.enableMAD), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "userawref",         "Set flag to use raw frames for reference instead reconstructed frames", OFFSET(qsv.use_raw_ref), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+
     { NULL },
 };
 

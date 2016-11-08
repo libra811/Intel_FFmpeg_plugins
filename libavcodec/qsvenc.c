@@ -238,6 +238,34 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
             q->extco2.MBBRC                 = q->MBBRC;
         }
 
+#if 1
+        //Intra Refresh
+        if(q->intref_cyclesize > 2) {
+            q->extco2.IntRefType          = 1; //VERT_REFRESH
+            q->extco2.IntRefCycleSize     = q->intref_cyclesize;
+            q->extco2.IntRefQPDelta       = q->intref_QPdelta;
+        }
+
+        if(q->maxframesize) {
+           if((MFX_RATECONTROL_AVBR == q->param.mfx.RateControlMethod) ||
+              (MFX_RATECONTROL_VBR == q->param.mfx.RateControlMethod))
+               q->extco2.MaxFrameSize            = q->maxframesize;
+           else
+               av_log(avctx, AV_LOG_DEBUG, "MaxFrameSize only used in AVBR and VBR \n");
+        }
+        q->extco2.MaxSliceSize            = q->maxslicesize;
+        q->extco2.Trellis                 = q->trellis;
+        q->extco2.RepeatPPS               = q->repeatPPS_off ? MFX_CODINGOPTION_OFF : MFX_CODINGOPTION_ON;
+        q->extco2.AdaptiveI               = q->adaptiveI ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+        q->extco2.AdaptiveB               = q->adaptiveB ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+        q->extco2.NumMbPerSlice           = q->numMb_per_slice;
+        q->extco2.FixedFrameRate          = q->fixed_framerate ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+        q->extco2.DisableVUI              = q->disable_VUI ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+        q->extco2.BufferingPeriodSEI      = q->buffing_periodSEI;
+        q->extco2.EnableMAD               = q->enableMAD ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+        q->extco2.UseRawRef               = q->use_raw_ref ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+#endif
+
         q->extco2.BRefType              = q->BRefControl;
         q->extco2.BitrateLimit          = MFX_CODINGOPTION_OFF;
         q->extparam[1] = (mfxExtBuffer *)&q->extco2;
