@@ -55,7 +55,8 @@ typedef struct QSVEncContext {
     mfxExtCodingOption  extco;
 #if QSV_VERSION_ATLEAST(1,6)
     mfxExtCodingOption2 extco2;
-    mfxExtBuffer *extparam[2];
+    mfxExtCodingOption3 extco3;
+    mfxExtBuffer *extparam[3];
 #else
     mfxExtBuffer *extparam[1];
 #endif
@@ -112,6 +113,15 @@ typedef struct QSVEncContext {
     unsigned short buffing_periodSEI;
     unsigned short enableMAD;
     unsigned short use_raw_ref;
+
+    // options for mfxExtCodingOption3
+    unsigned short num_slice_I;
+    unsigned short winbrc_maxavg_kbps;
+    unsigned short win_brc_size;
+    unsigned short qvbr_quality;
+    unsigned short direct_bias_adj;
+    unsigned short enable_global_motion_bias;
+    unsigned short mv_cost_sf;
 
     char *load_plugins;
 } QSVEncContext;

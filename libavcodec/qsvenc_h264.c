@@ -144,6 +144,14 @@ static const AVOption options[] = {
     { "enableMAD",         "Turn ON this flag to enable per-frame reporting of MAD", OFFSET(qsv.enableMAD), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "userawref",         "Set flag to use raw frames for reference instead reconstructed frames", OFFSET(qsv.use_raw_ref), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
 
+    { "numSlicei",         "The number of slices for I", OFFSET(qsv.num_slice_I), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "winmaxavg",         "Specifies the maximum bitrate averaged over a sliding window for MFX_RATECONTROL_LA/MFX_RATECONTROL_LA_HRD", OFFSET(qsv.winbrc_maxavg_kbps), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "winsize",           "Specifies sliding used for MFX_RATECONTROL_LA/MFX_RATECONTROL_LA_HRD window size in frames", OFFSET(qsv.win_brc_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "qvbrquality",       "Specifies quality factor used for MFX_RATECONTROL_QVBR", OFFSET(qsv.qvbr_quality), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 51, VE },
+    { "direct_bias_adj",   "Set flag to enable the ENC mode decision algorithm to bias to fewer B Direct/Skip types", OFFSET(qsv.direct_bias_adj), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "glo_motion_bias_adj","Enables global motion bias", OFFSET(qsv.enable_global_motion_bias), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "mv_cost_sf",         "MV cost scaling ratio", OFFSET(qsv.mv_cost_sf), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 3, VE },
+
     { NULL },
 };
 
