@@ -131,6 +131,12 @@ static int codec_connect( QSVContext* qsv_dec_ctx, AVCodecContext* av_dec_ctx, A
 		qsv_enc_ctx = &(hevc_enc_ctx->qsv);
 	}
 
+	if( strcmp(av_enc_ctx->codec->name, "mjpeg_qsv")==0 ){
+	QSVMJPEGEncContext* mjpeg_enc_ctx;
+	mjpeg_enc_ctx = (QSVMJPEGEncContext*) av_enc_ctx->priv_data;
+		qsv_enc_ctx = &(mjpeg_enc_ctx->qsv);
+	}
+
     q->enc_ctx = qsv_enc_ctx;
 
 	//video memory is used when decoder and encoder are all supported with HW
@@ -181,6 +187,12 @@ int av_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp
 		qsv = &(qsv_ctx->qsv);//.pCodecConnect(&(qsv_ctx->qsv), av_dec_ctx, av_enc_ctx);
     }
 
+	if( strcmp(av_dec_ctx->codec->name, "mjpeg_qsv")==0 )
+    {
+	QSVMJPEGContext* qsv_ctx = (QSVMJPEGContext*) av_dec_ctx->priv_data;
+		qsv = &(qsv_ctx->qsv);//.pCodecConnect(&(qsv_ctx->qsv), av_dec_ctx, av_enc_ctx);
+    }
+
 	if(NULL == qsv->enc_ctx) return 0;
 	qsv->vpp = vpp;
 	vpp->inter_vpp[0].session = qsv->session;
@@ -198,6 +210,11 @@ int av_qsv_pipeline_connect_codec( AVCodecContext *av_dec_ctx, AVCodecContext *a
 		qsv = &(qsv_ctx->qsv);//.pCodecConnect(&(qsv_ctx->qsv), av_dec_ctx, av_enc_ctx);
     }
         
+    if( strcmp(av_dec_ctx->codec->name, "mjpeg_qsv") ==0 ) {
+		QSVMJPEGContext* qsv_ctx = (QSVMJPEGContext*) av_dec_ctx->priv_data;
+		qsv = &(qsv_ctx->qsv);//.pCodecConnect(&(qsv_ctx->qsv), av_dec_ctx, av_enc_ctx);
+    }
+
 	if( strcmp(av_dec_ctx->codec->name, "mpeg2_qsv")==0 ){
 		QSVMPEG2Context* qsv_ctx = (QSVMPEG2Context*) av_dec_ctx->priv_data;
 		qsv = &(qsv_ctx->qsv);//.pCodecConnect(&(qsv_ctx->qsv), av_dec_ctx, av_enc_ctx);
