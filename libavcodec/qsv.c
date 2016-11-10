@@ -30,6 +30,8 @@
 #include "avcodec.h"
 #include "qsv_internal.h"
 
+#include "mfxjpeg.h"
+
 int g_gpucopy_mode = MFX_GPUCOPY_OFF;
 
 int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id)
@@ -46,6 +48,8 @@ int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id)
         return MFX_CODEC_MPEG2;
     case AV_CODEC_ID_VC1:
         return MFX_CODEC_VC1;
+    case AV_CODEC_ID_MJPEG:
+        return MFX_CODEC_JPEG;
     default:
         break;
     }

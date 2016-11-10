@@ -123,6 +123,9 @@ typedef struct QSVEncContext {
     unsigned short enable_global_motion_bias;
     unsigned short mv_cost_sf;
 
+    //for MJPEG
+    unsigned short quality;
+
     char *load_plugins;
 } QSVEncContext;
 
@@ -137,6 +140,11 @@ typedef struct QSVHEVCEncContext {
     int load_plugin;
 } QSVHEVCEncContext;
 
+
+typedef struct QSVMJPEGEncContext {
+    AVClass *class;
+    QSVEncContext qsv;
+} QSVMJPEGEncContext;
 
 typedef struct QSVMpeg2EncContext {
     AVClass *class;
