@@ -62,16 +62,6 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->param.mfx.CodecLevel = avctx->level;
 
     q->param.mfx.CodecProfile       = q->profile;
-    q->param.mfx.TargetUsage        = q->preset;
-    q->param.mfx.GopPicSize         = FFMAX(0, avctx->gop_size);
-    q->param.mfx.GopRefDist         = FFMAX(-1, avctx->max_b_frames) + 1;
-    q->param.mfx.GopOptFlag         = avctx->flags & CODEC_FLAG_CLOSED_GOP ?
-                                      MFX_GOP_CLOSED : 0;
-    q->param.mfx.IdrInterval        = q->idr_interval;
-    q->param.mfx.NumSlice           = avctx->slices;
-    q->param.mfx.NumRefFrame        = FFMAX(0, avctx->refs);
-    q->param.mfx.EncodedOrder       = 0;
-    q->param.mfx.BufferSizeInKB     = 0;
 
     q->param.mfx.FrameInfo.FourCC         = MFX_FOURCC_NV12;
     q->param.mfx.FrameInfo.CropX          = 0;
@@ -107,6 +97,25 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->param.mfx.FrameInfo.FrameRateExtD  = avctx->time_base.num;
     }
 
+    if (AV_CODEC_ID_MJPEG == avctx->codec_id) {
+        av_log(avctx, AV_LOG_INFO, " Init codec is QSV JPEG encode \n");
+        q->param.mfx.Interleaved          = 1;
+        q->param.mfx.Quality              = q->quality;;
+        q->param.mfx.RestartInterval      = 0;
+
+        return 0;
+    }
+
+    q->param.mfx.TargetUsage        = q->preset;
+    q->param.mfx.GopPicSize         = FFMAX(0, avctx->gop_size);
+    q->param.mfx.GopRefDist         = FFMAX(-1, avctx->max_b_frames) + 1;
+    q->param.mfx.GopOptFlag         = avctx->flags & CODEC_FLAG_CLOSED_GOP ?
+                                      MFX_GOP_CLOSED : 0;
+    q->param.mfx.IdrInterval        = q->idr_interval;
+    q->param.mfx.NumSlice           = avctx->slices;
+    q->param.mfx.NumRefFrame        = FFMAX(0, avctx->refs);
+    q->param.mfx.EncodedOrder       = 0;
+    q->param.mfx.BufferSizeInKB     = 0;
     if (avctx->flags & CODEC_FLAG_QSCALE) {
         q->param.mfx.RateControlMethod = MFX_RATECONTROL_CQP;
         ratecontrol_desc = "constant quantization parameter (CQP)";
@@ -337,6 +346,10 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         return ff_qsv_error(ret);
 
     q->packet_size = q->param.mfx.BufferSizeInKB * 1000;
+
+    if (0 == q->packet_size) {
+        q->packet_size = q->param.mfx.FrameInfo.Height * q->param.mfx.FrameInfo.Width * 4;
+    }
 
     if (!extradata.SPSBufSize || (need_pps && !extradata.PPSBufSize)) {
         av_log(avctx, AV_LOG_ERROR, "No extradata returned from libmfx.\n");
