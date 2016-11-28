@@ -116,6 +116,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     vps.vps_time_scale                      = sps.vui.vui_time_scale;
     vps.vps_poc_proportional_to_timing_flag = sps.vui.vui_poc_proportional_to_timing_flag;
     vps.vps_num_ticks_poc_diff_one          = sps.vui.vui_num_ticks_poc_diff_one_minus1 + 1;
+    vps.vps_num_hrd_parameters              = 0;
 
     /* generate the encoded RBSP form of the VPS */
     ret = ff_hevc_encode_nal_vps(&vps, sps.vps_id, vps_rbsp_buf, sizeof(vps_rbsp_buf));
@@ -177,10 +178,12 @@ static av_cold int qsv_enc_init(AVCodecContext *avctx)
     if (ret < 0)
         return ret;
 
-    ret = generate_fake_vps(&q->qsv, avctx);
-    if (ret < 0) {
-        ff_qsv_enc_close(avctx, &q->qsv);
-        return ret;
+    if (!q->qsv.has_vps) {
+        ret = generate_fake_vps(&q->qsv, avctx);
+        if (ret < 0) {
+            ff_qsv_enc_close(avctx, &q->qsv);
+            return ret;
+        }
     }
 
     return 0;

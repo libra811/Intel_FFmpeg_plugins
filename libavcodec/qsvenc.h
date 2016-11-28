@@ -126,6 +126,9 @@ typedef struct QSVEncContext {
     //for MJPEG
     unsigned short quality;
 
+    //for HEVC
+    int has_vps;
+
     char *load_plugins;
 } QSVEncContext;
 
