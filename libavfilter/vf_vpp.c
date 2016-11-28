@@ -100,10 +100,15 @@ enum EOFAction {
     { "contrast",    "ProcAmp contrast",                                       OFFSET(contrast),   AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, 0.0, 10.0, .flags = FLAGS},
     { "brightness",  "ProcAmp brightness",                                     OFFSET(brightness), AV_OPT_TYPE_FLOAT, {.dbl = 0.0 }, -100.0, 100.0, .flags = FLAGS},
 
-    { "w", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
-    { "width", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="iw"}, 0, 255, .flags = FLAGS },
-    { "h", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ih/iw"}, 0, 255, .flags = FLAGS },
-    { "height", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ih/iw"}, 0, 255, .flags = FLAGS },
+    { "cw",   "set the width crop area expression",       OFFSET(cw), AV_OPT_TYPE_STRING, {.str = "iw"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "ch",   "set the height crop area expression",      OFFSET(ch), AV_OPT_TYPE_STRING, {.str = "ih"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "cx",   "set the x crop area expression",           OFFSET(cx), AV_OPT_TYPE_STRING, {.str = "(in_w-out_w)/2"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "cy",   "set the y crop area expression",           OFFSET(cy), AV_OPT_TYPE_STRING, {.str = "(in_h-out_h)/2"}, CHAR_MIN, CHAR_MAX, FLAGS },
+
+    { "w", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="cw"}, 0, 255, .flags = FLAGS },
+    { "width", "Output video width", OFFSET(ow), AV_OPT_TYPE_STRING, {.str="cw"}, 0, 255, .flags = FLAGS },
+    { "h", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ch/cw"}, 0, 255, .flags = FLAGS },
+    { "height", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, {.str="w*ch/cw"}, 0, 255, .flags = FLAGS },
 
     { "overlay_type", "Overlay enable", OFFSET(use_composite), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, .flags = FLAGS},
 #if VPP_FLEX_MAIN
@@ -145,6 +150,10 @@ static const char *const var_names[] = {
     "overlay_y",  "y",
     "overlay_w",
     "overlay_h",
+    "cw",
+    "ch",
+    "cx",
+    "cy",
     NULL
 };
 
@@ -165,6 +174,10 @@ enum var_name {
     VAR_OVERLAY_Y, VAR_Y,
     VAR_OVERLAY_W,
     VAR_OVERLAY_H,
+    CW,
+    CH,
+    CX,
+    CY,
     VAR_VARS_NB
 };
 
@@ -800,6 +813,17 @@ static int initial_vpp(VPPContext *vpp)
         }
     }
 
+    if (vpp->use_crop) {
+       vpp->inter_vpp[0].pVppParam->vpp.In.CropX = vpp->crop_x;
+       vpp->inter_vpp[0].pVppParam->vpp.In.CropY = vpp->crop_y;
+       vpp->inter_vpp[0].pVppParam->vpp.In.CropW = vpp->crop_w;
+       vpp->inter_vpp[0].pVppParam->vpp.In.CropH = vpp->crop_h;
+
+       av_log(vpp->ctx, AV_LOG_DEBUG, "Crop paramters: x=%d y=%d w=%d h=%d ,Out w=%d h=%d \n",vpp->crop_x,vpp->crop_y,
+                                                vpp->crop_w,vpp->crop_h,vpp->inter_vpp[0].pVppParam->vpp.Out.Width,
+                                                vpp->inter_vpp[0].pVppParam->vpp.Out.Height);
+    }
+
     for (int vppidx = 0; vppidx < vpp->num_vpp; vppidx++) {
         memset(&vpp->inter_vpp[vppidx].req, 0, sizeof(mfxFrameAllocRequest) * 2);
         ret = MFXVideoVPP_QueryIOSurf(vpp->inter_vpp[vppidx].session,
@@ -1123,13 +1147,22 @@ static int eval_expr(AVFilterContext *ctx)
 #endif
     AVExpr *ox_expr = NULL, *oy_expr = NULL;
     AVExpr *ow_expr = NULL, *oh_expr = NULL;
+    AVExpr *cw_expr = NULL, *ch_expr = NULL;
+    AVExpr *cx_expr = NULL, *cy_expr = NULL;
     int     ret = 0;
 
     /*
      * Pass expressions into AVExpr
      */
+    PASS_EXPR(cw_expr, vpp->cw);
+    PASS_EXPR(ch_expr, vpp->ch);
+
     PASS_EXPR(w_expr, vpp->ow);
     PASS_EXPR(h_expr, vpp->oh);
+
+    PASS_EXPR(cx_expr, vpp->cx);
+    PASS_EXPR(cy_expr, vpp->cy);
+
 #if VPP_FLEX_MAIN
     PASS_EXPR(mx_expr, vpp->main_ox);
     PASS_EXPR(my_expr, vpp->main_oy);
@@ -1164,6 +1197,12 @@ static int eval_expr(AVFilterContext *ctx)
     /*
      * Calc the user-defined values.
      */
+    //crop
+    CALC_EXPR(cw_expr, var_values[CW], vpp->crop_w);
+    CALC_EXPR(ch_expr, var_values[CH], vpp->crop_h);
+    //calc again in case cw is relative to ch
+    CALC_EXPR(cw_expr, var_values[CW], vpp->crop_w);
+
     CALC_EXPR(w_expr,
             var_values[VAR_MAIN_W] = var_values[VAR_OUT_W] = var_values[VAR_oW] = var_values[VAR_W],
             vpp->out_width);
@@ -1174,6 +1213,16 @@ static int eval_expr(AVFilterContext *ctx)
     CALC_EXPR(w_expr,
             var_values[VAR_MAIN_W] = var_values[VAR_OUT_W] = var_values[VAR_oW] = var_values[VAR_W],
             vpp->out_width);
+
+    CALC_EXPR(cx_expr, var_values[CX], vpp->crop_x);
+    CALC_EXPR(cy_expr, var_values[CY], vpp->crop_y);
+    //calc again in case cx is relative to cy
+    CALC_EXPR(cx_expr, var_values[CX], vpp->crop_x);
+
+    if((vpp->crop_w != var_values[VAR_iW]) || (vpp->crop_h != var_values[VAR_iH])) {
+        vpp->use_crop = 1;
+        av_log(NULL, AV_LOG_DEBUG, "Using the crop feature \n");
+    }
 
 #if VPP_FLEX_MAIN
     CALC_EXPR(mw_expr, var_values[VAR_MAIN_oW], vpp->layout[VPP_PAD_MAIN].DstW);
@@ -1269,6 +1318,7 @@ static int config_output(AVFilterLink *outlink)
     int              ret = 0;
     AVCodec         *codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
 
+    av_log(vpp->ctx, AV_LOG_ERROR, "Crop paramters %d \n",vpp->num_vpp);
     ret = eval_expr(ctx);
     if (ret != 0)
         return ret;
@@ -1317,6 +1367,26 @@ static int config_output(AVFilterLink *outlink)
         }
     }
 
+    if (vpp->use_crop) {
+       if (vpp->crop_x < 0)  vpp->crop_x = 0;
+       if (vpp->crop_y < 0)  vpp->crop_y = 0;
+
+       if(vpp->crop_w%2)
+          vpp->crop_w++;
+       if(vpp->crop_h%2)
+          vpp->crop_h++;
+       if(vpp->out_width%2)
+          vpp->out_width++;
+       if(vpp->out_height%2)
+          vpp->out_height++;
+       if(vpp->crop_w + vpp->crop_x > main_in->w)
+          vpp->crop_x = main_in->w - vpp->crop_w;
+       if(vpp->crop_h + vpp->crop_y > main_in->h)
+          vpp->crop_y = main_in->h - vpp->crop_h;
+
+       av_log(vpp->ctx, AV_LOG_DEBUG, "Crop Align paramters: x=%d y=%d w=%d h=%d \n",vpp->crop_x,vpp->crop_y,
+                                                vpp->crop_w,vpp->crop_h);
+    }
     outlink->w             = vpp->out_width;
     outlink->h             = vpp->out_height;
     outlink->frame_rate    = vpp->framerate;

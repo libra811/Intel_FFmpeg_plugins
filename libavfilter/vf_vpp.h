@@ -129,9 +129,15 @@ typedef struct {
     float  brightness;
 
     int use_composite;          // 1 = use composite; 0=none
+    int use_crop;               // 1 = use crop; 0=none
+    int crop_w;
+    int crop_h;
+    int crop_x;
+    int crop_y;
     mfxVPPCompInputStream layout[VPP_PAD_NUM];
     char *ow, *oh;
     char *main_ox, *main_oy, *main_ow, *main_oh;
+    char *cx, *cy, *cw, *ch;
     char *overlay_ox, *overlay_oy, *overlay_ow, *overlay_oh;
     AVRational framerate;       // target framerate
     int eof_action;             // actions when encountering EOF of overlay
