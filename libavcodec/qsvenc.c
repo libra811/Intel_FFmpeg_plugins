@@ -471,9 +471,6 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
         av_log(avctx, AV_LOG_ERROR, "Error retrieving encoding parameters.\n");
         return ret;
     }
-#if FF_API_CODED_FRAME
-    avctx->coded_frame = av_frame_alloc();
-#endif
 
     q->avctx = avctx;
 
@@ -774,10 +771,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
 int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
 {
     QSVFrame *cur;
-
-#if FF_API_CODED_FRAME
-    av_frame_free(&avctx->coded_frame);
-#endif
 
     MFXVideoENCODE_Close(q->session);
     q->session = NULL;

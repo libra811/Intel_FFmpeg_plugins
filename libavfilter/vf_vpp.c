@@ -1272,6 +1272,11 @@ static int eval_expr(AVFilterContext *ctx)
     av_expr_free(ow_expr);
     av_expr_free(oh_expr);
 
+    av_expr_free(cx_expr);
+    av_expr_free(cy_expr);
+    av_expr_free(cw_expr);
+    av_expr_free(ch_expr);
+
 #undef PASS_EXPR
 #undef CALC_EXPR
 

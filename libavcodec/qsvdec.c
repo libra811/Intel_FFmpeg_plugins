@@ -57,6 +57,7 @@ static void free_surfaces(QSVContext *q, mfxFrameAllocResponse *resp)
     QSVFrame *cur = NULL;
     if(q->work_frames){
         cur = q->work_frames;
+        free(cur->surface);
         while(cur){
             av_frame_free(&cur->frame);
             cur = cur->next;
