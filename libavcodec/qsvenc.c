@@ -334,7 +334,6 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
 
     mfxExtBuffer *ext_buffers[] = {
         (mfxExtBuffer*)&spspps,
-        (mfxExtBuffer*)&vps,
     };
 
     int need_pps = avctx->codec_id != AV_CODEC_ID_MPEG2VIDEO;
@@ -349,9 +348,15 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         return ff_qsv_error(ret);
 
     q->packet_size = q->param.mfx.BufferSizeInKB * 1000;
-
     if (0 == q->packet_size) {
         q->packet_size = q->param.mfx.FrameInfo.Height * q->param.mfx.FrameInfo.Width * 4;
+    }
+
+    if (need_vps) {
+        ext_buffers[0] = (mfxExtBuffer*)&vps;
+        ret = MFXVideoENCODE_GetVideoParam(q->session, &q->param);
+        if (ret < 0)
+            av_log(avctx, AV_LOG_WARNING, "VPS is needed but not found.\n");
     }
 
     if (   !spspps.SPSBufSize
@@ -369,7 +374,7 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
     if (!avctx->extradata)
         return AVERROR(ENOMEM);
 
-    if (need_vps)
+    if (need_vps && vps.VPSBufSize)
         memcpy(avctx->extradata, vps.VPSBuffer, vps.VPSBufSize);
     memcpy(avctx->extradata + need_vps * vps.VPSBufSize, spspps.SPSBuffer, spspps.SPSBufSize);
     if (need_pps)
