@@ -177,6 +177,12 @@ static int get_video_buffer(AVFrame *frame, int align)
 
         for (i = 0; i < 4 && frame->linesize[i]; i++)
             frame->linesize[i] = FFALIGN(frame->linesize[i], align);
+
+        if (0 == strcmp(desc->name, "yuv420p")) {
+            if (frame->linesize[0]%frame->linesize[1] != 0)
+                frame->linesize[0] = frame->linesize[1]<<1;
+         }
+
     }
 
     for (i = 0; i < 4 && frame->linesize[i]; i++) {
