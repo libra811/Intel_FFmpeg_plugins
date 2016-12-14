@@ -120,7 +120,7 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format, uint32_t *fourcc)
     }
 }
 
-static int qsv_load_plugins(mfxSession session, const char *load_plugins,
+int ff_qsv_load_plugins(mfxSession session, const char *load_plugins,
                             void *logctx)
 {
     if (!load_plugins || !*load_plugins)
@@ -185,7 +185,7 @@ int ff_qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
         return ff_qsv_error(ret);
     }
 
-    ret = qsv_load_plugins(*session, load_plugins, avctx);
+    ret = ff_qsv_load_plugins(*session, load_plugins, avctx);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
         return ret;
@@ -329,7 +329,7 @@ int ff_qsv_init_session_hwcontext(AVCodecContext *avctx, mfxSession *psession,
         }
     }
 
-    ret = qsv_load_plugins(session, load_plugins, avctx);
+    ret = ff_qsv_load_plugins(session, load_plugins, avctx);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
         return ret;

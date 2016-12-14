@@ -49,6 +49,8 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
     if (session) {
         q->session = session;
     } else if (hw_frames_ref) {
+        AVHWFramesContext           *s = (AVHWFramesContext*)hw_frames_ref->data;
+        AVQSVFramesContext *frames_ctx = s->hwctx;
         if (q->internal_session) {
             MFXClose(q->internal_session);
             q->internal_session = NULL;
@@ -58,16 +60,16 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
         q->frames_ctx.hw_frames_ctx = av_buffer_ref(hw_frames_ref);
         if (!q->frames_ctx.hw_frames_ctx)
             return AVERROR(ENOMEM);
-
-        ret = ff_qsv_init_session_hwcontext(avctx, &q->internal_session,
-                                            &q->frames_ctx, q->load_plugins,
-                                            q->iopattern == MFX_IOPATTERN_OUT_OPAQUE_MEMORY);
-        if (ret < 0) {
-            av_buffer_unref(&q->frames_ctx.hw_frames_ctx);
-            return ret;
+        /*
+         * Use the session created by AVQSVFramesContext.
+         * This session has been fully configured except the plugins.
+         */
+        q->session = frames_ctx->child_session;
+        if (q->load_plugins) {
+            ret = ff_qsv_load_plugins(q->session, q->load_plugins, avctx);
+            if (ret < 0)
+                return ret;
         }
-
-        q->session = q->internal_session;
     } else {
         if (!q->internal_session) {
             ret = ff_qsv_init_internal_session(avctx, &q->internal_session,

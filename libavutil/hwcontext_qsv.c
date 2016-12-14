@@ -129,6 +129,7 @@ static int qsv_device_init(AVHWDeviceContext *ctx)
 static void qsv_frames_uninit(AVHWFramesContext *ctx)
 {
     QSVFramesContext *s = ctx->internal->priv;
+    AVQSVFramesContext *frame_ctx = ctx->hwctx;
 
     if (s->session_download) {
         MFXVideoVPP_Close(s->session_download);
@@ -141,6 +142,11 @@ static void qsv_frames_uninit(AVHWFramesContext *ctx)
         MFXClose(s->session_upload);
     }
     s->session_upload = NULL;
+
+    if (frame_ctx->child_session) {
+        MFXClose(frame_ctx->child_session);
+        frame_ctx->child_session = NULL;
+    }
 
     av_freep(&s->mem_ids);
     av_freep(&s->surface_ptrs);
@@ -344,7 +350,13 @@ static mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *req,
     if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_PROCESSOR_TARGET) ||
         !(req->Type & (MFX_MEMTYPE_FROM_VPPIN | MFX_MEMTYPE_FROM_VPPOUT)) ||
         !(req->Type & MFX_MEMTYPE_EXTERNAL_FRAME))
-        return MFX_ERR_UNSUPPORTED;
+        /*
+         * Check if the request comes from decoder.
+         */
+        if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET) ||
+            !(req->Type & (MFX_MEMTYPE_FROM_DECODE | MFX_MEMTYPE_FROM_ENCODE)) ||
+            !(req->Type & MFX_MEMTYPE_EXTERNAL_FRAME))
+            return MFX_ERR_UNSUPPORTED;
     if (i->Width  != i1->Width || i->Height != i1->Height ||
         i->FourCC != i1->FourCC || i->ChromaFormat != i1->ChromaFormat) {
         av_log(ctx, AV_LOG_ERROR, "Mismatching surface properties in an "
@@ -381,11 +393,17 @@ static mfxStatus frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *hdl)
     return MFX_ERR_NONE;
 }
 
+/*
+ * Param @upload: 0 - download session
+ *                1 - upload session
+ *                -1- none
+ */
 static int qsv_init_internal_session(AVHWFramesContext *ctx,
                                      mfxSession *session, int upload)
 {
     QSVFramesContext              *s = ctx->internal->priv;
     AVQSVFramesContext *frames_hwctx = ctx->hwctx;
+    AVQSVDeviceContext *device_hwctx = ctx->device_ctx->hwctx;
     QSVDeviceContext   *device_priv  = ctx->device_ctx->internal->priv;
     int opaque = !!(frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME);
 
@@ -401,7 +419,12 @@ static int qsv_init_internal_session(AVHWFramesContext *ctx,
     mfxVideoParam par;
     mfxStatus err;
 
-    err = MFXInit(device_priv->impl, &device_priv->ver, session);
+    /*
+     * MFXCloneSession is light-weigt for MFXInit and MFXJoinSession.
+     * It's recommended to join together sessions that will work in ONE pipeline.
+     * This will benefit MSDK to manage tasks.
+     */
+    err = MFXCloneSession(device_hwctx->session, session);
     if (err != MFX_ERR_NONE) {
         av_log(ctx, AV_LOG_ERROR, "Error initializing an internal session\n");
         return AVERROR_UNKNOWN;
@@ -419,6 +442,9 @@ static int qsv_init_internal_session(AVHWFramesContext *ctx,
         if (err != MFX_ERR_NONE)
             return AVERROR_UNKNOWN;
     }
+
+    if (upload != -1)
+        return 0;
 
     memset(&par, 0, sizeof(par));
 
@@ -517,6 +543,14 @@ static int qsv_frames_init(AVHWFramesContext *ctx)
         return ret;
 
     ret = qsv_init_internal_session(ctx, &s->session_upload, 1);
+    if (ret < 0)
+        return ret;
+
+    /*
+     * Create a session for outside use.
+     * User can use this session to create QSV modules.
+     */
+    ret = qsv_init_internal_session(ctx, &frames_hwctx->child_session, -1);
     if (ret < 0)
         return ret;
 

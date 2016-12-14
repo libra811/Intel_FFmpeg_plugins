@@ -74,4 +74,6 @@ int ff_qsv_init_session_hwcontext(AVCodecContext *avctx, mfxSession *session,
                                   QSVFramesContext *qsv_frames_ctx,
                                   const char *load_plugins, int opaque);
 
+int ff_qsv_load_plugins(mfxSession session, const char *load_plugins, void *logctx);
+
 #endif /* AVCODEC_QSV_INTERNAL_H */

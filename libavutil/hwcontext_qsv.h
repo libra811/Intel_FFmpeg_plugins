@@ -42,6 +42,11 @@ typedef struct AVQSVDeviceContext {
 typedef struct AVQSVFramesContext {
     mfxFrameSurface1 *surfaces;
     int            nb_surfaces;
+    /*
+     * A session cloned from device_ctx->session.
+     * For user to create qsvdec/qsvenc/qsvvpp.
+     */
+    mfxSession child_session;
 
     /**
      * A combination of MFX_MEMTYPE_* describing the frame pool.

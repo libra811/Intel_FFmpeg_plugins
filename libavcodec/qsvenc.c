@@ -659,19 +659,18 @@ static int qsvenc_init_session(AVCodecContext *avctx, QSVEncContext *q)
         AVQSVContext *qsv = avctx->hwaccel_context;
         q->session = qsv->session;
     } else if (avctx->hw_frames_ctx) {
+        AVHWFramesContext           *s = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
+        AVQSVFramesContext *frames_ctx = s->hwctx;
         q->frames_ctx.hw_frames_ctx = av_buffer_ref(avctx->hw_frames_ctx);
         if (!q->frames_ctx.hw_frames_ctx)
             return AVERROR(ENOMEM);
 
-        ret = ff_qsv_init_session_hwcontext(avctx, &q->internal_session,
-                                            &q->frames_ctx, q->load_plugins,
-                                            q->param.IOPattern == MFX_IOPATTERN_IN_OPAQUE_MEMORY);
-        if (ret < 0) {
-            av_buffer_unref(&q->frames_ctx.hw_frames_ctx);
-            return ret;
+        q->session = frames_ctx->child_session;
+        if (q->load_plugins) {
+            ret = ff_qsv_load_plugins(q->session, q->load_plugins, avctx);
+            if (ret < 0)
+                return ret;
         }
-
-        q->session = q->internal_session;
     } else {
         ret = ff_qsv_init_internal_session(avctx, &q->internal_session,
                                            q->load_plugins);
