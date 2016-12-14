@@ -71,6 +71,13 @@ typedef struct QSVFramesContext {
     mfxExtBuffer *ext_buffers[1];
 } QSVFramesContext;
 
+typedef struct QSVMemId {
+    /*
+     * A buffer refer to VASurfaceID.
+     */
+    AVBufferRef *va_surf_ref;
+} QSVMemId;
+
 static const struct {
     mfxHandleType handle_type;
     enum AVHWDeviceType device_type;
@@ -130,6 +137,7 @@ static void qsv_frames_uninit(AVHWFramesContext *ctx)
 {
     QSVFramesContext *s = ctx->internal->priv;
     AVQSVFramesContext *frame_ctx = ctx->hwctx;
+    int i;
 
     if (s->session_download) {
         MFXVideoVPP_Close(s->session_download);
@@ -148,6 +156,17 @@ static void qsv_frames_uninit(AVHWFramesContext *ctx)
         frame_ctx->child_session = NULL;
     }
 
+    /*
+     * Release cached VASurfaceID and QSVMemId
+     */
+    if (  CONFIG_VAAPI &&
+        !(frame_ctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME))
+        for (i = 0; i < frame_ctx->nb_surfaces; i++) {
+            QSVMemId *memid = (QSVMemId*)s->mem_ids[i];
+            av_buffer_unref(&memid->va_surf_ref);
+            av_freep(&memid);
+        }
+
     av_freep(&s->mem_ids);
     av_freep(&s->surface_ptrs);
     av_freep(&s->surfaces_internal);
@@ -163,8 +182,24 @@ static AVBufferRef *qsv_pool_alloc(void *opaque, int size)
     AVHWFramesContext    *ctx = (AVHWFramesContext*)opaque;
     QSVFramesContext       *s = ctx->internal->priv;
     AVQSVFramesContext *hwctx = ctx->hwctx;
+#if CONFIG_VAAPI
+    QSVMemId           *memid = NULL;
+    AVHWFramesContext *child_ctx = (AVHWFramesContext*)s->child_frames_ref->data;
+#endif
 
     if (s->nb_surfaces_used < hwctx->nb_surfaces) {
+        /*
+         * Note that when child device is VAAPI, VASurfaceID isnot allocated yet.
+         * Get one from child_ctx->pool.
+         */
+        if (  CONFIG_VAAPI &&
+            !(hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME)) {
+            memid = s->surfaces_internal[s->nb_surfaces_used].Data.MemId;
+            memid->va_surf_ref = av_buffer_pool_get(child_ctx->pool);
+            if (!memid->va_surf_ref)
+                return NULL;
+        }
+
         s->nb_surfaces_used++;
         return av_buffer_create((uint8_t*)(s->surfaces_internal + s->nb_surfaces_used - 1),
                                 sizeof(*hwctx->surfaces), qsv_pool_release_dummy, NULL, 0);
@@ -175,7 +210,10 @@ static AVBufferRef *qsv_pool_alloc(void *opaque, int size)
 
 static int qsv_init_child_ctx(AVHWFramesContext *ctx)
 {
+#if CONFIG_DXVA2
     AVQSVFramesContext     *hwctx = ctx->hwctx;
+    int                         i = 0;
+#endif
     QSVFramesContext           *s = ctx->internal->priv;
     QSVDeviceContext *device_priv = ctx->device_ctx->internal->priv;
 
@@ -185,7 +223,7 @@ static int qsv_init_child_ctx(AVHWFramesContext *ctx)
     AVHWDeviceContext *child_device_ctx;
     AVHWFramesContext *child_frames_ctx;
 
-    int i, ret = 0;
+    int ret = 0;
 
     if (!device_priv->handle) {
         av_log(ctx, AV_LOG_ERROR,
@@ -227,7 +265,15 @@ static int qsv_init_child_ctx(AVHWFramesContext *ctx)
 
     child_frames_ctx->format            = device_priv->child_pix_fmt;
     child_frames_ctx->sw_format         = ctx->sw_format;
+#if CONFIG_DXVA2
     child_frames_ctx->initial_pool_size = ctx->initial_pool_size;
+#endif
+#if CONFIG_VAAPI
+    /*
+     * Allocate VASurfaceID dynamically.
+     */
+    child_frames_ctx->initial_pool_size = 0;
+#endif
     child_frames_ctx->width             = ctx->width;
     child_frames_ctx->height            = ctx->height;
 
@@ -247,14 +293,6 @@ static int qsv_init_child_ctx(AVHWFramesContext *ctx)
         goto fail;
     }
 
-#if CONFIG_VAAPI
-    if (child_device_ctx->type == AV_HWDEVICE_TYPE_VAAPI) {
-        AVVAAPIFramesContext *child_frames_hwctx = child_frames_ctx->hwctx;
-        for (i = 0; i < ctx->initial_pool_size; i++)
-            s->surfaces_internal[i].Data.MemId = child_frames_hwctx->surface_ids + i;
-        hwctx->frame_type = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
-    }
-#endif
 #if CONFIG_DXVA2
     if (child_device_ctx->type == AV_HWDEVICE_TYPE_DXVA2) {
         AVDXVA2FramesContext *child_frames_hwctx = child_frames_ctx->hwctx;
@@ -282,23 +320,37 @@ static int qsv_init_pool(AVHWFramesContext *ctx, uint32_t fourcc)
     AVQSVFramesContext *frames_hwctx = ctx->hwctx;
     const AVPixFmtDescriptor *desc;
 
-    int i, ret = 0;
+    int i, ret = 0, nb_surfaces;
+    int opaque = !!(frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME);
 
     desc = av_pix_fmt_desc_get(ctx->sw_format);
     if (!desc)
         return AVERROR_BUG;
 
+#if CONFIG_DXVA2
     if (ctx->initial_pool_size <= 0) {
         av_log(ctx, AV_LOG_ERROR, "QSV requires a fixed frame pool size\n");
         return AVERROR(EINVAL);
     }
+    nb_surfaces = ctx->initial_pool_size;
+#endif
+#if CONFIG_VAAPI
+    /*
+     * We preallocate 128 mfxSurfaces at least.
+     * why 128: decoder 14 + encoder 14 + encoder look_ahead_depth 100.
+     * As VASurface is not allocated yet, it won't waste too many memory.
+     */
+    nb_surfaces = 128;
+    if (ctx->initial_pool_size > nb_surfaces)
+        nb_surfaces = ctx->initial_pool_size;
+#endif
 
-    s->surfaces_internal = av_mallocz_array(ctx->initial_pool_size,
+    s->surfaces_internal = av_mallocz_array(nb_surfaces,
                                             sizeof(*s->surfaces_internal));
     if (!s->surfaces_internal)
         return AVERROR(ENOMEM);
 
-    for (i = 0; i < ctx->initial_pool_size; i++) {
+    for (i = 0; i < nb_surfaces; i++) {
         mfxFrameSurface1 *surf = &s->surfaces_internal[i];
 
         surf->Info.BitDepthLuma   = desc->comp[0].depth;
@@ -319,9 +371,16 @@ static int qsv_init_pool(AVHWFramesContext *ctx, uint32_t fourcc)
         surf->Info.CropH          = ctx->height;
         surf->Info.FrameRateExtN  = 25;
         surf->Info.FrameRateExtD  = 1;
+#if CONFIG_VAAPI
+        if (!opaque) {
+            surf->Data.MemId      = av_mallocz(sizeof(QSVMemId));
+            if (!surf->Data.MemId)
+                return AVERROR(ENOMEM);
+        }
+#endif
     }
 
-    if (!(frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME)) {
+    if (!opaque) {
         ret = qsv_init_child_ctx(ctx);
         if (ret < 0)
             return ret;
@@ -333,7 +392,7 @@ static int qsv_init_pool(AVHWFramesContext *ctx, uint32_t fourcc)
         return AVERROR(ENOMEM);
 
     frames_hwctx->surfaces    = s->surfaces_internal;
-    frames_hwctx->nb_surfaces = ctx->initial_pool_size;
+    frames_hwctx->nb_surfaces = nb_surfaces;
 
     return 0;
 }
@@ -389,7 +448,13 @@ static mfxStatus frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
 
 static mfxStatus frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *hdl)
 {
+#if CONFIG_DXVA2
     *hdl = mid;
+#endif
+#if CONFIG_VAAPI
+    QSVMemId *memid = (QSVMemId *)mid;
+    *hdl = (mfxHDL)&memid->va_surf_ref->data;
+#endif
     return MFX_ERR_NONE;
 }
 
