@@ -702,12 +702,41 @@ static mfxIMPL choose_implementation(const char *device)
     return impl;
 }
 
+static int create_proper_child_device(AVBufferRef **ctx, const char *device, int flags)
+{
+    enum AVHWDeviceType child_device_type;
+    char adapter[256];
+    int  adapter_num;
+
+    if (CONFIG_VAAPI)
+        child_device_type = AV_HWDEVICE_TYPE_VAAPI;
+    else if (CONFIG_DXVA2)
+        child_device_type = AV_HWDEVICE_TYPE_DXVA2;
+    else
+        return AVERROR(ENOSYS);
+
+    if (device || CONFIG_DXVA2)
+        return av_hwdevice_ctx_create(ctx, child_device_type, device, NULL, flags);
+
+    for (adapter_num = 0; adapter_num < 6; adapter_num++) {
+        if (adapter_num < 3)
+            snprintf(adapter,sizeof(adapter),
+                "/dev/dri/renderD%d", adapter_num+128);
+        else
+            snprintf(adapter,sizeof(adapter),
+                "/dev/dri/card%d", adapter_num-3);
+        if (av_hwdevice_ctx_create(ctx, child_device_type, adapter, NULL, flags) == 0)
+            return 0;
+    }
+
+    return AVERROR(ENOSYS);
+}
+
 static int qsv_device_create(AVHWDeviceContext *ctx, const char *device,
                              AVDictionary *opts, int flags)
 {
     AVQSVDeviceContext *hwctx = ctx->hwctx;
     QSVDevicePriv *priv;
-    enum AVHWDeviceType child_device_type;
     AVDictionaryEntry *e;
 
     mfxVersion    ver = { { 3, 1 } };
@@ -725,18 +754,7 @@ static int qsv_device_create(AVHWDeviceContext *ctx, const char *device,
     ctx->free        = qsv_device_free;
 
     e = av_dict_get(opts, "child_device", NULL, 0);
-
-    if (CONFIG_VAAPI)
-        child_device_type = AV_HWDEVICE_TYPE_VAAPI;
-    else if (CONFIG_DXVA2)
-        child_device_type = AV_HWDEVICE_TYPE_DXVA2;
-    else {
-        av_log(ctx, AV_LOG_ERROR, "No supported child device type is enabled\n");
-        return AVERROR(ENOSYS);
-    }
-
-    ret = av_hwdevice_ctx_create(&priv->child_device_ctx, child_device_type,
-                                 e ? e->value : NULL, NULL, 0);
+    ret = create_proper_child_device(&priv->child_device_ctx, e ? e->value : NULL, 0);
     if (ret < 0)
         return ret;
 
