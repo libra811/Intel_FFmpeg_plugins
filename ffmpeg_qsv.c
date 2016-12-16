@@ -76,8 +76,8 @@ int qsv_init(AVCodecContext *s)
     frames_ctx   = (AVHWFramesContext*)ist->hw_frames_ctx->data;
     frames_hwctx = frames_ctx->hwctx;
 
-    frames_ctx->width             = FFALIGN(s->coded_width,  32);
-    frames_ctx->height            = FFALIGN(s->coded_height, 32);
+    frames_ctx->width             = s->coded_width;
+    frames_ctx->height            = s->coded_height;
     frames_ctx->format            = AV_PIX_FMT_QSV;
     frames_ctx->sw_format         = s->sw_pix_fmt;
     frames_ctx->initial_pool_size = 0;
@@ -152,8 +152,8 @@ int qsv_transcode_init(OutputStream *ost)
     encode_frames = (AVHWFramesContext*)encode_frames_ref->data;
     qsv_frames = encode_frames->hwctx;
 
-    encode_frames->width     = FFALIGN(ist->resample_width,  32);
-    encode_frames->height    = FFALIGN(ist->resample_height, 32);
+    encode_frames->width     = ist->resample_width;
+    encode_frames->height    = ist->resample_height;
     encode_frames->format    = AV_PIX_FMT_QSV;
     encode_frames->sw_format = AV_PIX_FMT_NV12;
     encode_frames->initial_pool_size = 0;
