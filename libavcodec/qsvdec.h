@@ -44,6 +44,7 @@ typedef struct QSVContext {
     mfxSession internal_session;
 
     QSVFramesContext frames_ctx;
+    QSVDeviceContext device_ctx;
 
     /**
      * a linked list of frames currently being used by QSV

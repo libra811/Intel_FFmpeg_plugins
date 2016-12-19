@@ -41,6 +41,65 @@
 #include "qsv_internal.h"
 #include "qsvdec.h"
 
+static int qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
+                                 QSVContext *q, const char *load_plugins)
+{
+    mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
+    mfxVersion ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+
+    const char *desc;
+    int ret;
+    AVHWDeviceContext *device_hw;
+    AVQSVDeviceContext *hwctx;
+    AVBufferRef *hw_device_ctx;
+
+    ret = MFXInit(impl, &ver, session);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");
+        return ff_qsv_error(ret);
+    }
+
+    ret = ff_qsv_load_plugins(*session, load_plugins, avctx);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
+        return ret;
+    }
+
+    ret = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_QSV, NULL, NULL, 0);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to create a QSV device\n");
+        return ret;
+    }
+    device_hw = (AVHWDeviceContext*)hw_device_ctx->data;
+    hwctx = device_hw->hwctx;
+
+    *session = hwctx->session;
+
+    q->device_ctx.hw_device_ctx = hw_device_ctx;
+
+    MFXQueryIMPL(*session, &impl);
+
+    switch (MFX_IMPL_BASETYPE(impl)) {
+    case MFX_IMPL_SOFTWARE:
+        desc = "software";
+        break;
+    case MFX_IMPL_HARDWARE:
+    case MFX_IMPL_HARDWARE2:
+    case MFX_IMPL_HARDWARE3:
+    case MFX_IMPL_HARDWARE4:
+        desc = "hardware accelerated";
+        break;
+    default:
+        desc = "unknown";
+    }
+
+    av_log(avctx, AV_LOG_VERBOSE,
+           "Initialized an internal MFX session using %s implementation\n",
+           desc);
+
+    return 0;
+}
+
 static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session,
                             AVBufferRef *hw_frames_ref)
 {
@@ -72,13 +131,13 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
         }
     } else {
         if (!q->internal_session) {
-            ret = ff_qsv_init_internal_session(avctx, &q->internal_session,
+            ret = qsv_init_internal_session(avctx, &q->session, q,
                                                q->load_plugins);
             if (ret < 0)
                 return ret;
         }
-
-        q->session = q->internal_session;
+        /* the session will close when unref the hw_device_ctx */
+       // q->session = q->internal_session;
     }
 
     /* make sure the decoder is uninitialized */
@@ -430,6 +489,7 @@ int ff_qsv_decode_close(QSVContext *q)
         MFXClose(q->internal_session);
 
     av_buffer_unref(&q->frames_ctx.hw_frames_ctx);
+    av_buffer_unref(&q->device_ctx.hw_device_ctx);
     av_freep(&q->frames_ctx.mids);
     q->frames_ctx.nb_mids = 0;
 

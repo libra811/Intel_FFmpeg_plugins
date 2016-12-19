@@ -50,6 +50,10 @@ typedef struct QSVFrame {
     struct QSVFrame *next;
 } QSVFrame;
 
+typedef struct QSVDeviceContext {
+    AVBufferRef *hw_device_ctx;
+} QSVDeviceContext;
+
 typedef struct QSVFramesContext {
     AVBufferRef *hw_frames_ctx;
     mfxFrameInfo info;
