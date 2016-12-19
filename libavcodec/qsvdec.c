@@ -53,18 +53,6 @@ static int qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
     AVQSVDeviceContext *hwctx;
     AVBufferRef *hw_device_ctx;
 
-    ret = MFXInit(impl, &ver, session);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");
-        return ff_qsv_error(ret);
-    }
-
-    ret = ff_qsv_load_plugins(*session, load_plugins, avctx);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
-        return ret;
-    }
-
     ret = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_QSV, NULL, NULL, 0);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Failed to create a QSV device\n");
@@ -77,6 +65,11 @@ static int qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
 
     q->device_ctx.hw_device_ctx = hw_device_ctx;
 
+    ret = ff_qsv_load_plugins(*session, load_plugins, avctx);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
+        return ret;
+    }
     MFXQueryIMPL(*session, &impl);
 
     switch (MFX_IMPL_BASETYPE(impl)) {
