@@ -651,6 +651,56 @@ static int qsv_init_opaque_alloc(AVCodecContext *avctx, QSVEncContext *q)
     return 0;
 }
 
+static int qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
+                                 QSVEncContext *q, const char *load_plugins)
+{
+    mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
+    const char *desc;
+    int ret;
+    AVHWDeviceContext *device_hw;
+    AVQSVDeviceContext *hwctx;
+    AVBufferRef *hw_device_ctx;
+
+    ret = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_QSV, NULL, NULL, 0);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to create a QSV device\n");
+        return ret;
+    }
+    device_hw = (AVHWDeviceContext*)hw_device_ctx->data;
+    hwctx = device_hw->hwctx;
+
+    *session = hwctx->session;
+
+    q->device_ctx.hw_device_ctx = hw_device_ctx;
+
+    ret = ff_qsv_load_plugins(*session, load_plugins, avctx);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error loading plugins\n");
+        return ret;
+    }
+    MFXQueryIMPL(*session, &impl);
+
+    switch (MFX_IMPL_BASETYPE(impl)) {
+    case MFX_IMPL_SOFTWARE:
+        desc = "software";
+        break;
+    case MFX_IMPL_HARDWARE:
+    case MFX_IMPL_HARDWARE2:
+    case MFX_IMPL_HARDWARE3:
+    case MFX_IMPL_HARDWARE4:
+        desc = "hardware accelerated";
+        break;
+    default:
+        desc = "unknown";
+    }
+
+    av_log(avctx, AV_LOG_VERBOSE,
+           "Initialized an internal MFX session using %s implementation\n",
+           desc);
+
+    return 0;
+}
+
 static int qsvenc_init_session(AVCodecContext *avctx, QSVEncContext *q)
 {
     int ret;
@@ -672,12 +722,12 @@ static int qsvenc_init_session(AVCodecContext *avctx, QSVEncContext *q)
                 return ret;
         }
     } else {
-        ret = ff_qsv_init_internal_session(avctx, &q->internal_session,
+        ret = qsv_init_internal_session(avctx, &q->session, q,
                                            q->load_plugins);
         if (ret < 0)
             return ret;
 
-        q->session = q->internal_session;
+       // q->session = q->internal_session;
     }
 
     return 0;
@@ -1087,6 +1137,7 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     q->internal_session = NULL;
 
     av_buffer_unref(&q->frames_ctx.hw_frames_ctx);
+    av_buffer_unref(&q->device_ctx.hw_device_ctx);
     av_freep(&q->frames_ctx.mids);
     q->frames_ctx.nb_mids = 0;
 
