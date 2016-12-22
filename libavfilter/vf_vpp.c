@@ -813,17 +813,6 @@ static int initial_vpp(VPPContext *vpp)
         }
     }
 
-    if (vpp->use_crop) {
-       vpp->inter_vpp[0].pVppParam->vpp.In.CropX = vpp->crop_x;
-       vpp->inter_vpp[0].pVppParam->vpp.In.CropY = vpp->crop_y;
-       vpp->inter_vpp[0].pVppParam->vpp.In.CropW = vpp->crop_w;
-       vpp->inter_vpp[0].pVppParam->vpp.In.CropH = vpp->crop_h;
-
-       av_log(vpp->ctx, AV_LOG_DEBUG, "Crop paramters: x=%d y=%d w=%d h=%d ,Out w=%d h=%d \n",vpp->crop_x,vpp->crop_y,
-                                                vpp->crop_w,vpp->crop_h,vpp->inter_vpp[0].pVppParam->vpp.Out.Width,
-                                                vpp->inter_vpp[0].pVppParam->vpp.Out.Height);
-    }
-
     for (int vppidx = 0; vppidx < vpp->num_vpp; vppidx++) {
         memset(&vpp->inter_vpp[vppidx].req, 0, sizeof(mfxFrameAllocRequest) * 2);
         ret = MFXVideoVPP_QueryIOSurf(vpp->inter_vpp[vppidx].session,
@@ -1023,6 +1012,17 @@ static int process_frame(AVFilterLink *inlink, int vppidx, AVFrame *picref)
             av_frame_free(&out);
             ret = MFX_ERR_MEMORY_ALLOC;
             break;
+        }
+
+        if ((vpp->use_crop) && (vppidx == 0)) {
+           pInSurface->Info.CropX = vpp->crop_x;
+           pInSurface->Info.CropY = vpp->crop_y;
+           pInSurface->Info.CropW = vpp->crop_w;
+           pInSurface->Info.CropH = vpp->crop_h;
+
+           av_log(vpp->ctx, AV_LOG_DEBUG, "Crop parameters: x=%d y=%d w=%d h=%d ,Out w=%d h=%d \n", vpp->crop_x, vpp->crop_y,
+                                                vpp->crop_w,vpp->crop_h, vpp->inter_vpp[0].pVppParam->vpp.Out.Width,
+                                                vpp->inter_vpp[0].pVppParam->vpp.Out.Height);
         }
 
         do {
