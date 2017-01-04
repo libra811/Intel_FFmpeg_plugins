@@ -68,25 +68,26 @@ int qsv_init(AVCodecContext *s)
             return ret;
     }
 
-    av_buffer_unref(&ist->hw_frames_ctx);
-    ist->hw_frames_ctx = av_hwframe_ctx_alloc(hw_device_ctx);
-    if (!ist->hw_frames_ctx)
-        return AVERROR(ENOMEM);
+    if(!ist->hw_frames_ctx) {
+        ist->hw_frames_ctx = av_hwframe_ctx_alloc(hw_device_ctx);
+        if (!ist->hw_frames_ctx)
+            return AVERROR(ENOMEM);
 
-    frames_ctx   = (AVHWFramesContext*)ist->hw_frames_ctx->data;
-    frames_hwctx = frames_ctx->hwctx;
+        frames_ctx   = (AVHWFramesContext*)ist->hw_frames_ctx->data;
+        frames_hwctx = frames_ctx->hwctx;
 
-    frames_ctx->width             = s->coded_width;
-    frames_ctx->height            = s->coded_height;
-    frames_ctx->format            = AV_PIX_FMT_QSV;
-    frames_ctx->sw_format         = s->sw_pix_fmt;
-    frames_ctx->initial_pool_size = 0;
-    frames_hwctx->frame_type      = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
+        frames_ctx->width             = s->coded_width;
+        frames_ctx->height            = s->coded_height;
+        frames_ctx->format            = AV_PIX_FMT_QSV;
+        frames_ctx->sw_format         = s->sw_pix_fmt;
+        frames_ctx->initial_pool_size = 0;
+        frames_hwctx->frame_type      = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
 
-    ret = av_hwframe_ctx_init(ist->hw_frames_ctx);
-    if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Error initializing a QSV frame pool\n");
-        return ret;
+        ret = av_hwframe_ctx_init(ist->hw_frames_ctx);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error initializing a QSV frame pool\n");
+            return ret;
+        }
     }
 
     ist->hwaccel_get_buffer = qsv_get_buffer;
@@ -101,9 +102,8 @@ int qsv_transcode_init(OutputStream *ost)
     const enum AVPixelFormat *pix_fmt;
 
     int err, i;
-    AVBufferRef *encode_frames_ref = NULL;
-    AVHWFramesContext *encode_frames;
-    AVQSVFramesContext *qsv_frames;
+    AVHWFramesContext *frames_ctx;
+    AVQSVFramesContext *frames_hwctx;
 
     /* check if the encoder supports QSV */
     if (!ost->enc->pix_fmts)
@@ -137,42 +137,33 @@ int qsv_transcode_init(OutputStream *ost)
     if (!hw_device_ctx) {
         err = qsv_device_init(ist);
         if (err < 0)
-            goto fail;
+            return err;
     }
 
-    // This creates a dummy hw_frames_ctx for the encoder to be
-    // suitably initialised.  It only contains one real frame, so
-    // hopefully doesn't waste too much memory.
+    ist->dec_ctx->pix_fmt = AV_PIX_FMT_QSV;
+    ist->resample_pix_fmt = AV_PIX_FMT_QSV;
+    ist->hw_frames_ctx    = av_hwframe_ctx_alloc(hw_device_ctx);
+    if (!ist->hw_frames_ctx)
+        return AVERROR(ENOMEM);
 
-    encode_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx);
-    if (!encode_frames_ref) {
-        err = AVERROR(ENOMEM);
-        goto fail;
+    frames_ctx   = (AVHWFramesContext*)ist->hw_frames_ctx->data;
+    frames_hwctx = frames_ctx->hwctx;
+
+    frames_ctx->width             = ist->resample_width;
+    frames_ctx->height            = ist->resample_height;
+    frames_ctx->format            = AV_PIX_FMT_QSV;
+    frames_ctx->sw_format         = AV_PIX_FMT_NV12;
+    frames_ctx->initial_pool_size = 0;
+    frames_hwctx->frame_type      = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
+
+    err = av_hwframe_ctx_init(ist->hw_frames_ctx);
+    if (err < 0) {
+        av_buffer_unref(&ist->hw_frames_ctx);
+        av_log(NULL, AV_LOG_ERROR, "Error initializing a QSV frame pool\n");
+        return err;
     }
-    encode_frames = (AVHWFramesContext*)encode_frames_ref->data;
-    qsv_frames = encode_frames->hwctx;
 
-    encode_frames->width     = ist->resample_width;
-    encode_frames->height    = ist->resample_height;
-    encode_frames->format    = AV_PIX_FMT_QSV;
-    encode_frames->sw_format = AV_PIX_FMT_NV12;
-    encode_frames->initial_pool_size = 0;
-
-    qsv_frames->frame_type = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
-
-    err = av_hwframe_ctx_init(encode_frames_ref);
-    if (err < 0)
-        goto fail;
-
-    ist->dec_ctx->pix_fmt       = AV_PIX_FMT_QSV;
-    ist->resample_pix_fmt       = AV_PIX_FMT_QSV;
-
-    ost->enc_ctx->pix_fmt       = AV_PIX_FMT_QSV;
-    ost->enc_ctx->hw_frames_ctx = encode_frames_ref;
+    ost->enc_ctx->pix_fmt = AV_PIX_FMT_QSV;
 
     return 0;
-
-fail:
-    av_buffer_unref(&encode_frames_ref);
-    return err;
 }
