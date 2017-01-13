@@ -4122,6 +4122,7 @@ static void free_stream(AVStream **pst)
 FF_DISABLE_DEPRECATION_WARNINGS
     av_freep(&st->codec->extradata);
     av_freep(&st->codec->subtitle_header);
+    av_buffer_unref(&st->codec->hw_frames_ctx);
     av_freep(&st->codec);
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
