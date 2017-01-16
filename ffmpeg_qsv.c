@@ -114,7 +114,7 @@ int qsv_transcode_init(OutputStream *ost)
     if (*pix_fmt == AV_PIX_FMT_NONE)
         return 0;
 
-    if (strcmp(ost->avfilter, "null") || ost->source_index < 0)
+    if (ost->source_index < 0)
         return 0;
 
     /* check if the decoder supports QSV and the output only goes to this stream */
