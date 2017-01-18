@@ -46,6 +46,8 @@ struct FFQSVVPPContext {
     int                out_video_mem;
     QSVFrame          *in_frame_list;
     QSVFrame          *out_frame_list;
+    mfxFrameInfo       in_info;
+    mfxFrameInfo       out_info;
 };
 
 static const AVRational default_tb = {1, 90000};
@@ -172,7 +174,12 @@ static QSVFrame *submit_frame(FFQSVVPPContext *s, AVFilterLink *inlink, AVFrame 
         }
         qsv_frame->surface = &qsv_frame->surface_internal;
     }
-    ff_qsvvpp_frameinfo_fill(&qsv_frame->surface->Info, inlink, 0);
+
+    if (FF_INLINK_IDX(inlink) == 0)
+        qsv_frame->surface->Info = s->in_info;
+    else
+        ff_qsvvpp_frameinfo_fill(&qsv_frame->surface->Info, inlink, 0);
+
     qsv_frame->surface->Data.TimeStamp = av_rescale_q(qsv_frame->frame->pts,
             inlink->time_base, default_tb);
 
@@ -226,7 +233,7 @@ static QSVFrame *query_frame(FFQSVVPPContext *s, AVFilterLink *outlink)
             return NULL;
         out_frame->surface = &out_frame->surface_internal;
     }
-    ff_qsvvpp_frameinfo_fill(&out_frame->surface->Info, outlink, 1);
+    out_frame->surface->Info = s->out_info;
 
     return out_frame;
 }
@@ -288,7 +295,6 @@ int ff_qsvvpp_create(AVFilterContext *avctx, FFQSVVPPContext **vpp, FFQSVVPPPara
     AVHWFramesContext  *frames_ctx;
     AVQSVDeviceContext *qsv_dev;
     AVQSVFramesContext *qsv_frames_ctx;
-    AVFilterLink       *outlink;
 
     if (!avctx || !vpp)
         return AVERROR(EINVAL);
@@ -299,10 +305,11 @@ int ff_qsvvpp_create(AVFilterContext *avctx, FFQSVVPPContext **vpp, FFQSVVPPPara
         goto failed;
     }
 
-    outlink          = avctx->outputs[0];
     s->cb            = param->cb;
     s->in_video_mem  = !!(param->vpp_param.IOPattern & MFX_IOPATTERN_IN_VIDEO_MEMORY);
     s->out_video_mem = !!(param->vpp_param.IOPattern & MFX_IOPATTERN_OUT_VIDEO_MEMORY);
+    s->in_info       = param->vpp_param.vpp.In;
+    s->out_info      = param->vpp_param.vpp.Out;
 
     if (avctx->hw_device_ctx) {
         s->device_ctx_ref = av_buffer_ref(avctx->hw_device_ctx);
@@ -333,8 +340,8 @@ int ff_qsvvpp_create(AVFilterContext *avctx, FFQSVVPPContext **vpp, FFQSVVPPPara
         }
         frames_ctx = (AVHWFramesContext*)s->frames_ctx_ref->data;
         qsv_frames_ctx                = frames_ctx->hwctx;
-        frames_ctx->width             = outlink->w;
-        frames_ctx->height            = outlink->h;
+        frames_ctx->width             = s->out_info.CropW;
+        frames_ctx->height            = s->out_info.CropH;
         frames_ctx->format            = AV_PIX_FMT_QSV;
         frames_ctx->sw_format         = AV_PIX_FMT_NV12;
         frames_ctx->initial_pool_size = 0;
@@ -345,8 +352,8 @@ int ff_qsvvpp_create(AVFilterContext *avctx, FFQSVVPPContext **vpp, FFQSVVPPPara
             goto failed;
         }
 
-        outlink->hw_frames_ctx = av_buffer_ref(s->frames_ctx_ref);
-        s->session             = qsv_frames_ctx->child_session;
+        avctx->outputs[0]->hw_frames_ctx = av_buffer_ref(s->frames_ctx_ref);
+        s->session = qsv_frames_ctx->child_session;
     }
 
     ret = MFXVideoVPP_Init(s->session, &param->vpp_param);
