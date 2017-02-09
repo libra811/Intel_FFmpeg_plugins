@@ -76,6 +76,7 @@ typedef struct QSVMemId {
      * A buffer refer to VASurfaceID.
      */
     AVBufferRef *va_surf_ref;
+    uint32_t fourcc;
 } QSVMemId;
 
 static const struct {
@@ -200,6 +201,7 @@ static AVBufferRef *qsv_pool_alloc(void *opaque, int size)
             memid->va_surf_ref = av_buffer_pool_get(child_ctx->pool);
             if (!memid->va_surf_ref)
                 return NULL;
+            memid->fourcc      = s->surfaces_internal[0].Info.FourCC;
         }
 
         s->nb_surfaces_used++;
@@ -404,14 +406,93 @@ static int qsv_init_pool(AVHWFramesContext *ctx, uint32_t fourcc)
     return 0;
 }
 
+#if CONFIG_VAAPI
+/*
+ * A wrapper to free buffer-packaged VABufferID.
+ */
+static void release_va_buffer(void *opaque, uint8_t *data)
+{
+    AVHWFramesContext    *ctx = opaque;
+    QSVDeviceContext*dev_priv = ctx->device_ctx->internal->priv;
+    VADisplay             dpy = dev_priv->handle;
+    VABufferID            bid = (VABufferID)data;
+
+    vaDestroyBuffer(dpy, bid);
+}
+
+/*
+ * @func alloc_internal_frame
+ * @desc Deal with situation that qsvenc requests internal frames.
+ */
+static int alloc_internal_frame(AVHWFramesContext *ctx, mfxFrameAllocRequest *req,
+                             mfxFrameAllocResponse *resp)
+{
+    QSVDeviceContext*dev_priv = ctx->device_ctx->internal->priv;
+    QSVFramesContext       *s = ctx->internal->priv;
+    AVHWFramesContext *child_ctx = (AVHWFramesContext*)s->child_frames_ref->data;
+    mfxFrameInfo           *i = &req->Info;
+    VAContextID           cid = req->AllocId;
+    VABufferType         type = VAEncCodedBufferType;
+    VADisplay             dpy = (VADisplay)dev_priv->handle;
+    uint32_t         buf_size;
+    int                   ret;
+    VABufferID            bid;
+    QSVMemId           *memid;
+
+    /*
+     * Allocate 1 more to store the type of these memids.
+     */
+    resp->mids = av_calloc(req->NumFrameSuggested + 1, sizeof(*resp->mids));
+    if (i->FourCC == MFX_FOURCC_P8) {
+        buf_size = FFALIGN(i->Width, 32) * FFALIGN(i->Height, 32) * 400LL / (16 * 16);
+        for (resp->NumFrameActual = 0;
+             resp->NumFrameActual < req->NumFrameSuggested;
+             resp->NumFrameActual++) {
+            resp->mids[resp->NumFrameActual] = memid = av_mallocz(sizeof(*memid));
+            if (!memid)
+                break;
+
+            ret = vaCreateBuffer(dpy, cid, type, buf_size, 1, NULL, &bid);
+            if (ret != VA_STATUS_SUCCESS) {
+                av_log(ctx, AV_LOG_ERROR, "Create Buffer failed with %s.\n",
+                        vaErrorStr(ret));
+                av_freep(&resp->mids[resp->NumFrameActual]);
+                break;
+            }
+            memid->va_surf_ref = av_buffer_create((uint8_t*)(uintptr_t)bid,
+                    sizeof(bid), release_va_buffer, ctx, AV_BUFFER_FLAG_READONLY);
+            memid->fourcc      = i->FourCC;
+        }
+    } else {
+        for (resp->NumFrameActual = 0;
+             resp->NumFrameActual < req->NumFrameSuggested;
+             resp->NumFrameActual++) {
+            resp->mids[resp->NumFrameActual] = memid = av_mallocz(sizeof(*memid));
+            if (!memid)
+                break;
+
+            memid->va_surf_ref = av_buffer_pool_get(child_ctx->pool);
+            if (!memid->va_surf_ref) {
+                av_freep(&resp->mids[resp->NumFrameActual]);
+                break;
+            }
+            memid->fourcc      = i->FourCC;
+        }
+    }
+    resp->mids[resp->NumFrameActual] = (mfxMemId)MFX_MEMTYPE_INTERNAL_FRAME;
+
+    return 0;
+}
+#endif
+
 static mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *req,
                              mfxFrameAllocResponse *resp)
 {
     AVHWFramesContext    *ctx = pthis;
     QSVFramesContext       *s = ctx->internal->priv;
     AVQSVFramesContext *hwctx = ctx->hwctx;
-    mfxFrameInfo *i  = &req->Info;
-    mfxFrameInfo *i1 = &hwctx->surfaces[0].Info;
+    mfxFrameInfo           *i = &req->Info;
+    mfxFrameInfo          *i1 = &hwctx->surfaces[0].Info;
 
     if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_PROCESSOR_TARGET) ||
         !(req->Type & (MFX_MEMTYPE_FROM_VPPIN | MFX_MEMTYPE_FROM_VPPOUT)) ||
@@ -422,34 +503,94 @@ static mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *req,
         if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET) ||
             !(req->Type & (MFX_MEMTYPE_FROM_DECODE | MFX_MEMTYPE_FROM_ENCODE)) ||
             !(req->Type & MFX_MEMTYPE_EXTERNAL_FRAME))
+            if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET) ||
+                !(req->Type & MFX_MEMTYPE_FROM_ENCODE) ||
+                !(req->Type & MFX_MEMTYPE_INTERNAL_FRAME))
             return MFX_ERR_UNSUPPORTED;
+
     if (i->Width  != i1->Width || i->Height != i1->Height ||
         i->FourCC != i1->FourCC || i->ChromaFormat != i1->ChromaFormat) {
-        av_log(ctx, AV_LOG_ERROR, "Mismatching surface properties in an "
+        av_log(ctx, AV_LOG_WARNING, "Mismatching surface properties in an "
                "allocation request: %dx%d %d %d vs %dx%d %d %d\n",
                i->Width,  i->Height,  i->FourCC,  i->ChromaFormat,
                i1->Width, i1->Height, i1->FourCC, i1->ChromaFormat);
-        return MFX_ERR_UNSUPPORTED;
+#if CONFIG_VAAPI
+        /*
+         * For hevc_enc, as a plugin is loaded, we should allocate internal frames
+         * for it.
+         */
+        if (i->FourCC != MFX_FOURCC_P8 || !(req->Type & MFX_MEMTYPE_INTERNAL_FRAME))
+#endif
+            return MFX_ERR_UNSUPPORTED;
     }
 
-    resp->mids           = s->mem_ids;
-    resp->NumFrameActual = hwctx->nb_surfaces;
+    if (req->Type & MFX_MEMTYPE_INTERNAL_FRAME)
+        return alloc_internal_frame(ctx, req, resp);
+    else {
+        resp->mids           = s->mem_ids;
+        resp->NumFrameActual = hwctx->nb_surfaces;
+    }
 
     return MFX_ERR_NONE;
 }
 
 static mfxStatus frame_free(mfxHDL pthis, mfxFrameAllocResponse *resp)
 {
+#if CONFIG_VAAPI
+    QSVMemId *mid;
+    int i;
+    mfxU32 mem_type = (mfxU32)resp->mids[resp->NumFrameActual];
+
+    if (mem_type & MFX_MEMTYPE_INTERNAL_FRAME) {
+        for (i = 0; i < resp->NumFrameActual; i++) {
+            mid = (QSVMemId *)resp->mids[i];
+            av_buffer_unref(&mid->va_surf_ref);
+            av_freep(&mid);
+        }
+        av_freep(&resp->mids);
+    }
+#endif
     return MFX_ERR_NONE;
 }
 
 static mfxStatus frame_lock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
 {
+#if CONFIG_VAAPI
+    AVHWFramesContext     *ctx = pthis;
+    QSVDeviceContext *dev_priv = ctx->device_ctx->internal->priv;
+    QSVMemId            *memid = mid;
+    VABufferID             bid = (VABufferID)memid->va_surf_ref->data;
+    VADisplay              dpy = dev_priv->handle;
+    VACodedBufferSegment *coded_buffer_segment;
+    VAStatus  va_res;
+
+    if (memid->fourcc == MFX_FOURCC_P8) {
+        va_res = vaMapBuffer(dpy, bid, (void **)&coded_buffer_segment);
+        if (va_res == 0) {
+            ptr->Y = (mfxU8*)coded_buffer_segment->buf;
+            return MFX_ERR_NONE;
+        }
+    }
+#endif
+
     return MFX_ERR_UNSUPPORTED;
 }
 
 static mfxStatus frame_unlock(mfxHDL pthis, mfxMemId mid, mfxFrameData *ptr)
 {
+#if CONFIG_VAAPI
+    AVHWFramesContext     *ctx = pthis;
+    QSVDeviceContext *dev_priv = ctx->device_ctx->internal->priv;
+    QSVMemId            *memid = mid;
+    VABufferID             bid = (VABufferID)memid->va_surf_ref->data;
+    VADisplay              dpy = dev_priv->handle;
+
+    if (memid->fourcc == MFX_FOURCC_P8) {
+        vaUnmapBuffer(dpy, bid);
+        return 0;
+    }
+#endif
+
     return MFX_ERR_UNSUPPORTED;
 }
 
@@ -602,12 +743,13 @@ static int qsv_frames_init(AVHWFramesContext *ctx)
 
         s->ext_buffers[0] = (mfxExtBuffer*)&s->opaque_alloc;
     } else {
-        s->mem_ids = av_mallocz_array(frames_hwctx->nb_surfaces, sizeof(*s->mem_ids));
+        s->mem_ids = av_mallocz_array(frames_hwctx->nb_surfaces + 1, sizeof(*s->mem_ids));
         if (!s->mem_ids)
             return AVERROR(ENOMEM);
 
         for (i = 0; i < frames_hwctx->nb_surfaces; i++)
             s->mem_ids[i] = frames_hwctx->surfaces[i].Data.MemId;
+        s->mem_ids[i] = (mfxMemId)MFX_MEMTYPE_EXTERNAL_FRAME;
         frames_hwctx->frame_type = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
     }
 
