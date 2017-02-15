@@ -28,6 +28,8 @@
 
 #include "ffmpeg.h"
 
+int qsv_buffer_size = 0;
+
 static int qsv_get_buffer(AVCodecContext *s, AVFrame *frame, int flags)
 {
     InputStream *ist = s->opaque;
@@ -104,6 +106,8 @@ int qsv_transcode_init(OutputStream *ost)
     int err, i;
     AVHWFramesContext *frames_ctx;
     AVQSVFramesContext *frames_hwctx;
+    mfxVersion ver = { {1, 1} };
+    mfxSession session;
 
     /* check if the encoder supports QSV */
     if (!ost->enc->pix_fmts)
@@ -134,6 +138,20 @@ int qsv_transcode_init(OutputStream *ost)
 
     av_log(NULL, AV_LOG_VERBOSE, "Setting up QSV transcoding\n");
 
+    /*
+     * Query MSDK version. Decoder's behavior is different between
+     * version older than 1.19 and 1.19.
+     */
+    err = MFXInit(MFX_IMPL_AUTO, &ver, &session);
+    if (err < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Creating session failed.\n");
+        return err;
+    }
+    err = MFXQueryVersion(session, &ver);
+    if (err < 0)
+        return err;
+    MFXClose(session);
+
     if (!hw_device_ctx) {
         err = qsv_device_init(ist);
         if (err < 0)
@@ -153,7 +171,15 @@ int qsv_transcode_init(OutputStream *ost)
     frames_ctx->height            = ist->resample_height;
     frames_ctx->format            = AV_PIX_FMT_QSV;
     frames_ctx->sw_format         = AV_PIX_FMT_NV12;
-    frames_ctx->initial_pool_size = 0;
+    frames_ctx->initial_pool_size = qsv_buffer_size;
+    if (frames_ctx->initial_pool_size == 0) {
+        /*
+         * For version older than 1.19, we pre-allocate enough surfaces
+         * for decoder; for 1.19, we allocate surfaces dynamically.
+         */
+        if (ver.Major <= 1 && ver.Minor < 19)
+            frames_ctx->initial_pool_size = 64;
+    }
     frames_hwctx->frame_type      = MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET;
 
     err = av_hwframe_ctx_init(ist->hw_frames_ctx);

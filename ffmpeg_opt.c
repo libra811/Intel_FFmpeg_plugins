@@ -3588,5 +3588,10 @@ const OptionDef options[] = {
         "set VAAPI hardware device (DRM path or X11 display name)", "device" },
 #endif
 
+#if CONFIG_QSV
+    { "qsv_surf_number", HAS_ARG | OPT_EXPERT | OPT_INT, { &qsv_buffer_size },
+        "set surfaces number for QSV pipeline", "device" },
+#endif
+
     { NULL, },
 };

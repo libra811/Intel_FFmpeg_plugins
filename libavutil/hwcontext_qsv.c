@@ -345,7 +345,7 @@ static int qsv_init_pool(AVHWFramesContext *ctx, uint32_t fourcc)
      * As VASurface is not allocated yet, it won't waste too many memory.
      */
     nb_surfaces = 128;
-    if (ctx->initial_pool_size > nb_surfaces)
+    if (ctx->initial_pool_size)
         nb_surfaces = ctx->initial_pool_size;
 #endif
 
@@ -502,10 +502,7 @@ static mfxStatus frame_alloc(mfxHDL pthis, mfxFrameAllocRequest *req,
          */
         if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET) ||
             !(req->Type & (MFX_MEMTYPE_FROM_DECODE | MFX_MEMTYPE_FROM_ENCODE)) ||
-            !(req->Type & MFX_MEMTYPE_EXTERNAL_FRAME))
-            if (!(req->Type & MFX_MEMTYPE_VIDEO_MEMORY_DECODER_TARGET) ||
-                !(req->Type & MFX_MEMTYPE_FROM_ENCODE) ||
-                !(req->Type & MFX_MEMTYPE_INTERNAL_FRAME))
+            !(req->Type & (MFX_MEMTYPE_EXTERNAL_FRAME | MFX_MEMTYPE_INTERNAL_FRAME)))
             return MFX_ERR_UNSUPPORTED;
 
     if (i->Width  != i1->Width || i->Height != i1->Height ||

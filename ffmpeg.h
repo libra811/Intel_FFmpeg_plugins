@@ -576,6 +576,8 @@ extern const HWAccel hwaccels[];
 extern int hwaccel_lax_profile_check;
 extern AVBufferRef *hw_device_ctx;
 
+extern int qsv_buffer_size;
+
 
 void term_init(void);
 void term_exit(void);
