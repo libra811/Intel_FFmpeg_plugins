@@ -765,7 +765,7 @@ static int initial_vpp(VPPContext *vpp)
                 vpp->inter_vpp[0].internal_qs.gpu_copy == MFX_GPUCOPY_ON ?
                 "enabled" : "disabled");
         ret = ff_qsv_init_internal_session((AVCodecContext *)vpp->ctx,
-                &vpp->inter_vpp[0].internal_qs, NULL);
+                &vpp->inter_vpp[0].internal_qs);
         if (ret < 0)
             return ret;
 

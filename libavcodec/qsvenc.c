@@ -393,8 +393,8 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     if (!q->session) {
         av_log(avctx, AV_LOG_DEBUG, "QSVENC: GPUCopy %s.\n",
                 q->internal_qs.gpu_copy == MFX_GPUCOPY_ON ? "enabled":"disabled");
-        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs,
-                                           q->load_plugins);
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs);
+
         if (ret < 0){
             av_log(NULL, AV_LOG_ERROR,"init internal session return %d\n", ret);
             return ret;
@@ -403,6 +403,15 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
         q->session = q->internal_qs.session;
     }
 
+    if (q->load_plugins) {
+        ret = ff_qsv_load_plugins(q->session, q->load_plugins);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to load plugins %s, ret = %s\n",
+                    q->load_plugins, av_err2str(ret));
+            return ff_qsv_error(ret);
+        }
+    }
+    
     if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
         av_log(NULL, AV_LOG_INFO, "ff_qsv_enc_init::MFX_IOPATTERN_IN_VIDEO_MEMORY\n");
         q->param.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY;
@@ -757,7 +766,7 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     ff_qsv_close_internal_session(&q->internal_qs);
 
     //free in decoder if video memory is used
-     if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
+     if( q->iopattern != MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
           cur = q->work_frames;
         while (cur) {
             q->work_frames = cur->next;

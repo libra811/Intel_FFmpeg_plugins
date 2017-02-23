@@ -82,6 +82,19 @@
  * @{
  */
 
+#define AV_INPUT_BUFFER_PADDING_SIZE 8
+
+#define AV_CODEC_FLAG_UNALIGNED       (1 <<  0)
+#define AV_CODEC_CAP_DR1                 (1 <<  1)
+
+#define AV_CODEC_CAP_DELAY               (1 <<  5)
+#define AV_CODEC_CAP_FRAME_THREADS       (1 << 12)
+#define AV_CODEC_CAP_SLICE_THREADS       (1 << 13)
+#define AV_CODEC_CAP_PARAM_CHANGE        (1 << 14)
+#define CODEC_CAP_FRAME_THREADS    AV_CODEC_CAP_FRAME_THREADS
+
+#define AV_CODEC_FLAG2_IGNORE_CROP    (1 << 16)
+
 
 /**
  * Identify the syntax and semantics of the bitstream.
@@ -861,7 +874,7 @@ typedef struct RcOverride{
 /**
  * Codec supports frame-level multithreading.
  */
-#define CODEC_CAP_FRAME_THREADS    0x1000
+//#define CODEC_CAP_FRAME_THREADS    0x1000
 /**
  * Codec supports slice-based (or partition-based) multithreading.
  */

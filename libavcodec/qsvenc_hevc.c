@@ -40,6 +40,14 @@ enum LoadPlugin {
     LOAD_PLUGIN_NONE,
     LOAD_PLUGIN_HEVC_SW,
     LOAD_PLUGIN_HEVC_HW,
+    LOAD_PLUGIN_DEFAULT,
+};
+
+static const char* hevc_plugins[] = {
+    NULL,
+    "2fca99749fdb49aeb121a5b63ef568f7", /*LOAD_PLUGIN_HEVC_SW*/
+    "6fadc791a0c2eb479ab6dcd5ea9da347", /*LOAD_PLUGIN_HEVC_HW*/
+    "6fadc791a0c2eb479ab6dcd5ea9da347:2fca99749fdb49aeb121a5b63ef568f7", /*LOAD_PLUGIN_HEVC_DEFAULT*/
 };
 
 static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
@@ -153,9 +161,6 @@ static av_cold int qsv_enc_init(AVCodecContext *avctx)
     int ret;
 
     if (q->load_plugin != LOAD_PLUGIN_NONE) {
-        static const char *uid_hevcenc_sw = "2fca99749fdb49aeb121a5b63ef568f7";
-        static const char *uid_hevcenc_hw = "6fadc791a0c2eb479ab6dcd5ea9da347";
-
         if (q->qsv.load_plugins[0]) {
             av_log(avctx, AV_LOG_WARNING,
                    "load_plugins is not empty, but load_plugin is not set to 'none'."
@@ -163,11 +168,7 @@ static av_cold int qsv_enc_init(AVCodecContext *avctx)
         } else {
             av_freep(&q->qsv.load_plugins);
 
-            if (q->load_plugin == LOAD_PLUGIN_HEVC_SW)
-                q->qsv.load_plugins = av_strdup(uid_hevcenc_sw);
-            else
-                q->qsv.load_plugins = av_strdup(uid_hevcenc_hw);
-
+            q->qsv.load_plugins = av_strdup(hevc_plugins[q->load_plugin]);
             if (!q->qsv.load_plugins)
                 return AVERROR(ENOMEM);
         }
@@ -208,10 +209,11 @@ static const AVOption options[] = {
     { "avbr_accuracy",    "Accuracy of the AVBR ratecontrol",    OFFSET(qsv.avbr_accuracy),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
     { "avbr_convergence", "Convergence of the AVBR ratecontrol", OFFSET(qsv.avbr_convergence), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
 
-    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_HEVC_SW }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_HW, VE, "load_plugin" },
+    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_DEFAULT }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_DEFAULT, VE, "load_plugin" },
     { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_NONE },    0, 0, VE, "load_plugin" },
     { "hevc_sw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_SW }, 0, 0, VE, "load_plugin" },
     { "hevc_hw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_HW }, 0, 0, VE, "load_plugin" },
+    { "default",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_DEFAULT }, 0, 0, VE, "load_plugin" },
 
     { "load_plugins", "A :-separate list of hexadecimal plugin UIDs to load in an internal session",
         OFFSET(qsv.load_plugins), AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VE },

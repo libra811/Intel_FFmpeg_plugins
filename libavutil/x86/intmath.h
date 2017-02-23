@@ -33,6 +33,19 @@
     #define av_popcount64 __builtin_popcountll
 #endif
 
+
 #endif /* defined(__GNUC__) && defined(__POPCNT__) */
+
+#define av_mod_uintp2 av_mod_uintp2_bmi2
+static av_always_inline av_const unsigned av_mod_uintp2_bmi2(unsigned a, unsigned p)
+{
+    if (av_builtin_constant_p(p))
+        return a & ((1 << p) - 1);
+    else {
+        unsigned x;
+        __asm__ ("bzhi %2, %1, %0 \n\t" : "=r"(x) : "rm"(a), "r"(p));
+        return x;
+    }
+}
 
 #endif /* AVUTIL_X86_INTMATH_H */
