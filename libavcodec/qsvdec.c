@@ -139,12 +139,13 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
     return 0;
 }
 
-static int qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
+static int qsv_decode_init(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
 {
     const AVPixFmtDescriptor *desc;
     mfxSession session = NULL;
     int iopattern = 0;
     mfxVideoParam param = { { 0 } };
+    mfxBitstream bs   = { { { 0 } } };
     int frame_width  = avctx->coded_width;
     int frame_height = avctx->coded_height;
     int ret;
@@ -193,41 +194,37 @@ static int qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
         return ret;
     }
 
+    if (avpkt->size) {
+        bs.Data       = avpkt->data;
+        bs.DataLength = avpkt->size;
+        bs.MaxLength  = bs.DataLength;
+        bs.TimeStamp  = avpkt->pts;
+    } else
+        return AVERROR_INVALIDDATA;
+
     ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
-    if (ret < 0)
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Unsupported codec_id %08x\n", avctx->codec_id);
         return ret;
-
-    param.mfx.CodecId      = ret;
-    param.mfx.CodecProfile = ff_qsv_profile_to_mfx(avctx->codec_id, avctx->profile);
-    param.mfx.CodecLevel   = avctx->level == FF_LEVEL_UNKNOWN ? MFX_LEVEL_UNKNOWN : avctx->level;
-
-    param.mfx.FrameInfo.BitDepthLuma   = desc->comp[0].depth;
-    param.mfx.FrameInfo.BitDepthChroma = desc->comp[0].depth;
-    param.mfx.FrameInfo.Shift          = desc->comp[0].depth > 8;
-    param.mfx.FrameInfo.FourCC         = q->fourcc;
-    param.mfx.FrameInfo.Width          = frame_width;
-    param.mfx.FrameInfo.Height         = frame_height;
-    param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
-
-    switch (avctx->field_order) {
-    case AV_FIELD_PROGRESSIVE:
-        param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_PROGRESSIVE;
-        break;
-    case AV_FIELD_TT:
-        param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_FIELD_TFF;
-        break;
-    case AV_FIELD_BB:
-        param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_FIELD_BFF;
-        break;
-    default:
-        param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_UNKNOWN;
-        break;
     }
+
+    param.mfx.CodecId = ret;
+
+    ret = MFXVideoDECODE_DecodeHeader(q->session, &bs, &param);
+    if (MFX_ERR_MORE_DATA==ret) {
+        return avpkt->size;
+    } else if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Decode header error %d\n", ret);
+        return ff_qsv_error(ret);
+    }
+    av_log(avctx, AV_LOG_INFO, "QSV DECODE: Decode Header\n");
 
     param.IOPattern   = q->iopattern;
     param.AsyncDepth  = q->async_depth;
     param.ExtParam    = q->ext_buffers;
     param.NumExtParam = q->nb_ext_buffers;
+    param.mfx.FrameInfo.BitDepthLuma   = 8;
+    param.mfx.FrameInfo.BitDepthChroma = 8;
 
     ret = MFXVideoDECODE_Init(q->session, &param);
     if (ret < 0) {
@@ -241,6 +238,8 @@ static int qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
         return ff_qsv_error(ret);
     }
 
+    avctx->width  = param.mfx.FrameInfo.CropW;
+    avctx->height = param.mfx.FrameInfo.CropH;
     q->frame_info = param.mfx.FrameInfo;
 
     return 0;
@@ -250,13 +249,20 @@ static int alloc_frame(AVCodecContext *avctx, QSVContext *q, QSVFrame *frame)
 {
     int ret;
 
-    ret = ff_get_buffer(avctx, frame->frame, AV_GET_BUFFER_FLAG_REF);
-    if (ret < 0)
-        return ret;
-
-    if (frame->frame->format == AV_PIX_FMT_QSV) {
+    if (avctx->pix_fmt == AV_PIX_FMT_QSV) {
+        ret = ff_get_buffer(avctx, frame->frame, AV_GET_BUFFER_FLAG_REF);
+        if (ret < 0)
+            return ret;
         frame->surface = (mfxFrameSurface1*)frame->frame->data[3];
+
     } else {
+        frame->frame->width  = avctx->width;
+        frame->frame->height = FFALIGN(avctx->height, 64);
+        frame->frame->format = avctx->pix_fmt;
+        ret = av_frame_get_buffer(frame->frame, 128);
+        if (ret < 0)
+            return ret;
+        frame->frame->height = avctx->height;
         frame->surface_internal.Info = q->frame_info;
 
         frame->surface_internal.Data.PitchLow = frame->frame->linesize[0];
@@ -553,7 +559,7 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
 
         avctx->pix_fmt = ret;
 
-        ret = qsv_decode_init(avctx, q);
+        ret = qsv_decode_init(avctx, q, pkt);
         if (ret < 0)
             goto reinit_fail;
     }
