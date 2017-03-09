@@ -36,6 +36,7 @@
 #include "qsv.h"
 #include "qsv_internal.h"
 #include "qsvdec.h"
+#include "libavcodec/vaapi_allocator.h"
 
 static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 {
@@ -343,7 +344,7 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
     q->param.ExtParam    = ext_buffers;
     q->param.NumExtParam = FF_ARRAY_ELEMS(ext_buffers);
 
-    ret = MFXVideoENCODE_GetVideoParam(q->session, &q->param);
+    ret = MFXVideoENCODE_GetVideoParam(q->internal_qs.session, &q->param);
     if (ret < 0)
         return ff_qsv_error(ret);
 
@@ -354,7 +355,7 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
 
     if (need_vps) {
         ext_buffers[0] = (mfxExtBuffer*)&vps;
-        ret = MFXVideoENCODE_GetVideoParam(q->session, &q->param);
+        ret = MFXVideoENCODE_GetVideoParam(q->internal_qs.session, &q->param);
         if (ret < 0)
             av_log(avctx, AV_LOG_WARNING, "VPS is needed but not found.\n");
     }
@@ -410,20 +411,34 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
         q->param.IOPattern = qsv->iopattern;
     }
 #endif
+
     if (!q->session) {
+        // system  mem create seession with vadisplay handle
         av_log(avctx, AV_LOG_DEBUG, "QSVENC: GPUCopy %s.\n",
                 q->internal_qs.gpu_copy == MFX_GPUCOPY_ON ? "enabled":"disabled");
         ret = ff_qsv_init_internal_session(avctx, &q->internal_qs);
+
+        if (ret < 0){
+            av_log(avctx, AV_LOG_ERROR,"init internal session return %d\n", ret);
+            return ret;
+        }
+        q->session = q->internal_qs.session;
+
+    } else {
+        // video mem create seesion without vadispaly which get from decode
+        ret = ff_qsv_init_internal_session_sp(avctx, &q->internal_qs);
+
         if (ret < 0){
             av_log(avctx, AV_LOG_ERROR,"init internal session return %d\n", ret);
             return ret;
         }
 
-        q->session = q->internal_qs.session;
+        ret = MFXJoinSession(q->session, q->internal_qs.session);
+        av_log(avctx, AV_LOG_ERROR,"MFXJoinSession  return %d\n", ret);
     }
 
     if (q->load_plugins) {
-        ret = ff_qsv_load_plugins(q->session, q->load_plugins);
+        ret = ff_qsv_load_plugins(q->internal_qs.session, q->load_plugins);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Failed to load plugins %s, ret = %s\n",
                     q->load_plugins, av_err2str(ret));
@@ -445,7 +460,36 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
 
     av_log(avctx, AV_LOG_INFO, "ENCODE QueryIOSurf start: session=%p\n", q->session);
 
-    ret = MFXVideoENCODE_QueryIOSurf(q->session, &q->param, &q->req);
+    if (q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY) {
+        VADisplay  va_dpy;
+
+        ret = MFXVideoCORE_GetHandle(q->session,
+                  (mfxHandleType)MFX_HANDLE_VA_DISPLAY, (mfxHDL*)&va_dpy);
+
+        q->internal_qs.va_display = va_dpy;
+        ret = MFXVideoCORE_SetHandle( q->internal_qs.session, MFX_HANDLE_VA_DISPLAY, (mfxHDL)va_dpy);
+
+        av_log(avctx, AV_LOG_INFO, "Set vadisplay for inter_session \n");
+    }
+
+
+    // frame_allocator for the seesion
+    if (q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY) {
+        //release this when closing the encoder
+        QSVContext* qsv_ctx = (QSVContext*) av_malloc(sizeof(QSVContext));
+        qsv_ctx->internal_qs = q->internal_qs;
+
+	q->inter_allocator.Alloc  = ff_qsv_frame_alloc;
+	q->inter_allocator.Lock   = ff_qsv_frame_lock;
+	q->inter_allocator.Unlock = ff_qsv_frame_unlock;
+	q->inter_allocator.GetHDL = ff_qsv_frame_get_hdl;
+	q->inter_allocator.Free   = ff_qsv_frame_free;
+	q->inter_allocator.pthis  = qsv_ctx;
+
+        MFXVideoCORE_SetFrameAllocator(q->internal_qs.session, &q->inter_allocator);
+    }
+
+    ret = MFXVideoENCODE_QueryIOSurf(q->internal_qs.session, &q->param, &q->req);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error querying the encoding parameters\n");
         return ff_qsv_error(ret);
@@ -453,12 +497,8 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     av_log(avctx, AV_LOG_INFO, "Encoder request %d surfaces\n", q->req.NumFrameSuggested);
 
 
-    if( q->iopattern == MFX_IOPATTERN_OUT_VIDEO_MEMORY ){
-        MFXVideoCORE_SetHandle( q->session, MFX_HANDLE_VA_DISPLAY, q->internal_qs.va_display );
-    }
-
     av_log(avctx, AV_LOG_INFO, "MFXVideoENCODE_Init here\n");
-    ret = MFXVideoENCODE_Init(q->session, &q->param);
+    ret = MFXVideoENCODE_Init(q->internal_qs.session, &q->param);
     if (MFX_WRN_PARTIAL_ACCELERATION==ret) {
         av_log(avctx, AV_LOG_WARNING, "Encoder will work with partial HW acceleration\n");
     } else if (ret < 0) {
@@ -665,7 +705,7 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
     bs->Data      = new_pkt.data;
     bs->MaxLength = new_pkt.size;
     do {
-        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, &ctrl, surf, bs, &sync);
+        ret = MFXVideoENCODE_EncodeFrameAsync(q->internal_qs.session, &ctrl, surf, bs, &sync);
         if (ret == MFX_WRN_DEVICE_BUSY) {
             av_usleep(500);
             continue;
@@ -721,7 +761,7 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
         av_fifo_generic_read(q->async_fifo, &sync,    sizeof(sync),    NULL);
         av_fifo_generic_read(q->async_fifo, &bs,      sizeof(bs),      NULL);
 
-        MFXVideoCORE_SyncOperation(q->session, sync, 60000);
+        MFXVideoCORE_SyncOperation(q->internal_qs.session, sync, 60000);
 
         new_pkt.dts  = av_rescale_q(bs->DecodeTimeStamp, (AVRational){1, 90000}, avctx->time_base);
         new_pkt.pts  = av_rescale_q(bs->TimeStamp,       (AVRational){1, 90000}, avctx->time_base);

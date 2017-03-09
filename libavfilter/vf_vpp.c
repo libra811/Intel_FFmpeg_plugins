@@ -773,7 +773,8 @@ static int initial_vpp(VPPContext *vpp)
     vpp->frame_number = 0;
 
     av_log(vpp->ctx, AV_LOG_INFO, "vpp configuration and call mfxVideoVPP_Init\n");
-    if (!vpp->inter_vpp[0].session) {
+    if (!vpp->session) {
+        //system memory
         av_log(vpp->ctx, AV_LOG_DEBUG, "sysmem-vpp: GPUCopy %s.\n",
                 vpp->inter_vpp[0].internal_qs.gpu_copy == MFX_GPUCOPY_ON ?
                 "enabled" : "disabled");
@@ -781,25 +782,52 @@ static int initial_vpp(VPPContext *vpp)
                 &vpp->inter_vpp[0].internal_qs);
         if (ret < 0)
             return ret;
+       vpp->inter_vpp[0].session = vpp->inter_vpp[0].internal_qs.session;
+    }
+    else {
+        VADisplay  va_dpy;
+        //video mem create seesion without vadispaly which get from decode
+        ret = ff_qsv_init_internal_session_sp((AVCodecContext *)vpp->ctx,
+                &vpp->inter_vpp[0].internal_qs);
+        if (ret < 0)
+            return ret;
 
         vpp->inter_vpp[0].session = vpp->inter_vpp[0].internal_qs.session;
+
+        ret = MFXJoinSession(vpp->session, vpp->inter_vpp[0].session);
+        av_log(vpp->ctx, AV_LOG_ERROR,"VPP MFXJoinSession  return %d\n", ret);
+
+        ret = MFXVideoCORE_GetHandle(vpp->session,
+                  (mfxHandleType)MFX_HANDLE_VA_DISPLAY, (mfxHDL*)&va_dpy);
+
+        ret = MFXVideoCORE_SetHandle(vpp->inter_vpp[0].session, MFX_HANDLE_VA_DISPLAY, (mfxHDL)va_dpy);
+
+        av_log(vpp->ctx, AV_LOG_INFO, "Set vadisplay for inter_session %d\n",ret);
+
     }
+
     av_log(vpp->ctx, AV_LOG_INFO, "vpp[0] initializing with session = %p\n",
         vpp->inter_vpp[0].session);
 
-    if (vpp->num_vpp > 1) {
-        ret = ff_qsv_clone_session(vpp->inter_vpp[0].session,
+    {
+        if (vpp->num_vpp > 1) {
+            ret = ff_qsv_clone_session(vpp->inter_vpp[0].session,
                 &vpp->inter_vpp[1].session);
-        if (ret < 0) {
+            if (ret < 0) {
             av_log(vpp->ctx, AV_LOG_ERROR, "clone session failed.\n");
             return ret;
+            }
         }
 
-        av_log(vpp->ctx, AV_LOG_INFO, "vpp[1] initializing with session = %p\n",
-            vpp->inter_vpp[1].session);
-        if (vpp->pFrameAllocator)
+        if (vpp->pFrameAllocator) {
+            av_log(vpp->ctx, AV_LOG_INFO,"VPP Set extFrameAllocator\n");
+            MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[0].session, vpp->pFrameAllocator);
+
+            if (vpp->num_vpp > 1)
             MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[1].session, vpp->pFrameAllocator);
-        else {
+
+        } else {
+            av_log(vpp->ctx, AV_LOG_INFO,"VPP Set Internal FrameAllocator\n");
             QSVContext *qsvctx = av_mallocz(sizeof(*qsvctx));
             vpp->inter_alloc.Alloc  = ff_qsv_frame_alloc;
             vpp->inter_alloc.Lock   = ff_qsv_frame_lock;
@@ -808,7 +836,10 @@ static int initial_vpp(VPPContext *vpp)
             vpp->inter_alloc.Free   = ff_qsv_frame_free;
             vpp->inter_alloc.pthis  = qsvctx;
             qsvctx->internal_qs = vpp->inter_vpp[0].internal_qs;
+
             MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[0].session, &vpp->inter_alloc);
+
+            if (vpp->num_vpp > 1)
             MFXVideoCORE_SetFrameAllocator(vpp->inter_vpp[1].session, &vpp->inter_alloc);
         }
     }

@@ -222,6 +222,56 @@ int ff_qsv_init_internal_session(void *avctx, QSVSession *qs)
     return 0;
 }
 
+
+// new seesion without vadisplay
+int ff_qsv_init_internal_session_sp(void *avctx, QSVSession *qs)
+{
+    mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
+    mfxVersion ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+    mfxInitParam initParam;
+
+    const char *desc;
+    int ret;
+
+    qs->session = NULL;
+    //ret = MFXInit(impl, &ver, &qs->session);
+    memset(&initParam, 0, sizeof(initParam));
+    initParam.Implementation = impl;
+    initParam.Version = ver;
+    initParam.GPUCopy = g_gpucopy_mode = (g_gpucopy_mode == MFX_GPUCOPY_ON ? g_gpucopy_mode : qs->gpu_copy);
+    ret = MFXInitEx(initParam, &qs->session);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");
+        return ff_qsv_error(ret);
+    }
+
+    //ret = ff_qsv_set_display_handle(avctx, qs);
+    if (ret < 0)
+        return ret;
+
+    MFXQueryIMPL(qs->session, &impl);
+
+    switch (MFX_IMPL_BASETYPE(impl)) {
+    case MFX_IMPL_SOFTWARE:
+        desc = "software";
+        break;
+    case MFX_IMPL_HARDWARE:
+    case MFX_IMPL_HARDWARE2:
+    case MFX_IMPL_HARDWARE3:
+    case MFX_IMPL_HARDWARE4:
+        desc = "hardware accelerated";
+        break;
+    default:
+        desc = "unknown";
+    }
+
+    av_log(avctx, AV_LOG_VERBOSE,
+           "Initialized an internal MFX session using %s implementation\n",
+           desc);
+
+    return 0;
+}
+
 /**
  * @brief Load plugins for a MSDK session
  *

@@ -196,7 +196,7 @@ int av_qsv_pipeline_insert_vpp( AVCodecContext *av_dec_ctx, AVFilterContext* vpp
 
 	if(NULL == qsv->enc_ctx) return 0;
 	qsv->vpp = vpp;
-	vpp->inter_vpp[0].session = qsv->session;
+	vpp->session = qsv->session;
 	vpp->pFrameAllocator = &(qsv->frame_allocator);
 	vpp->enc_ctx = qsv->enc_ctx;
 

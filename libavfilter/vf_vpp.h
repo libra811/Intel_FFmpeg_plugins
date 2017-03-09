@@ -72,6 +72,7 @@ typedef struct {
 
     AVFilterContext *ctx;
     QSVEncContext* enc_ctx;
+    mfxSession   session;
 
     int             num_vpp;
     VPPInterContext inter_vpp[2];

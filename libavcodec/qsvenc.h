@@ -42,6 +42,7 @@ typedef struct QSVEncContext {
 
     mfxSession session;
     QSVSession internal_qs;
+    mfxFrameAllocator inter_allocator;
 
     int packet_size;
     int width_align;

@@ -77,6 +77,8 @@ int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id);
 
 int ff_qsv_init_internal_session(void *avctx, QSVSession *qs);
 
+int ff_qsv_init_internal_session_sp(void *avctx, QSVSession *qs);
+
 int ff_qsv_load_plugins(mfxSession session, const char *load_plugins);
 
 int ff_qsv_close_internal_session(QSVSession *qs);
