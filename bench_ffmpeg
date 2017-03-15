@@ -1,0 +1,208 @@
+#!/bin/sh
+
+pw=
+time_func=$(which intel_gpu_time)
+sample_func=/opt/intel/mediasdk/samples/sample_multi_transcode
+ffmpeg_func=$(which ffmpeg)
+output_file=perf-test.csv
+mp2str=
+hevcstr=
+avcstr=
+
+function get_password()
+{
+    if [ "x"${pw} = "x" ] && [ ${EUID} -ne 0 ]
+    then
+        echo -n "[sudo] password for $(whoami): "
+        read -s pw
+        echo ""
+        echo ${pw} | sudo -S echo "" > /dev/null 2>&1
+        if test $? -ne 0; then
+            echo "Wrong password"
+            exit 1
+        fi
+    fi
+}
+
+function SUDO()
+{
+    if test ${EUID} -ne 0;then
+        echo ${pw} | sudo -S $*
+    else
+        eval "$*"
+    fi
+}
+
+function exec_cmd()
+{
+    if test ${EUID} -ne 0;then
+        echo ${pw} | su root -c "${time_func} $* > /tmp/perf_test.log" 2>/dev/null
+    else
+        ${time_func} $* > /tmp/perf_test.log
+    fi
+    tim=$(awk -F"," '/user/{ print $3 }' /tmp/perf_test.log | cut -d ':' -f 2)
+    cpu=$(awk -F"," '/user/{ print $4 }' /tmp/perf_test.log | cut -d ':' -f 2)
+    gpu=$(awk -F"," '/user/{ print $5 }' /tmp/perf_test.log | cut -d ':' -f 2)
+    echo "${tim},${cpu},${gpu}"
+}
+
+function exit_failure()
+{
+    echo $*
+    exit 1
+}
+
+function get_freq()
+{
+    cpu_model=$(grep "model name" -m 1 /proc/cpuinfo | cut -d ':' -f 2)
+    cpu_core=$(grep -c "model name" /proc/cpuinfo)
+    cpu_min=$(SUDO cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq)
+    cpu_cur=$(SUDO cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
+    cpu_max=$(SUDO cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)
+    gpu_model=$(lspci -s 00:02.0 | grep "VGA compatible controller" | cut -sd ':' -f 3)
+    gpu_min=$(SUDO cat /sys/devices/pci0000\:00/0000\:00\:02.0/drm/card0/gt_min_freq_mhz)
+    gpu_cur=$(SUDO cat /sys/devices/pci0000\:00/0000\:00\:02.0/drm/card0/gt_cur_freq_mhz)
+    gpu_max=$(SUDO cat /sys/devices/pci0000\:00/0000\:00\:02.0/drm/card0/gt_max_freq_mhz)
+    gpu_cur_slice=$(SUDO cat /sys/kernel/debug/dri/128/i915_slice_enabled)
+    gpu_max_slice=$(sudo awk -F: '/Available Slice Total/{ print $2 }' /sys/kernel/debug/dri/0/i915_sseu_status)
+
+    echo "CPU: ${cpu_model}, ${cpu_core} logic cores, freq ${cpu_cur}(${cpu_min}/${cpu_max})"
+    echo "GPU: ${gpu_model}, ${gpu_cur_slice}/${gpu_max_slice} slices, freq ${gpu_cur}(${gpu_min}/${gpu_max})"
+}
+
+function lock_freq()
+{
+    i=0
+    while [ $i -lt $(grep -c "model name" /proc/cpuinfo) ]
+    do
+        echo ${pw} | su root -c "cat /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_max_freq > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_min_freq" 2>/dev/null
+        let i=${i}+1
+    done
+
+    echo ${pw} | su root -c "cat /sys/devices/pci0000\:00/0000\:00\:02.0/drm/card0/gt_max_freq_mhz > /sys/devices/pci0000\:00/0000\:00\:02.0/drm/card0/gt_min_freq_mhz" 2>/dev/null
+}
+
+function set_slice_num()
+{
+    echo ${pw} | su root -c "echo $1 > /sys/kernel/debug/dri/128/i915_slice_enabled" 2>/dev/null
+}
+
+function print_help()
+{
+    echo "Usage:"
+    echo "    -h|--help              show this help"
+    echo "    -o|--output            set the output file"
+    echo "    -e:[sample/ffmpeg]     set the sample/ffmpeg position"
+    echo "    -s:h264                set the test streams"
+    echo "    --set-slice-num num"
+    echo "    --lock-freq"
+    echo "    --get-freq             get CPU/GPU info"
+}
+
+###################################
+# Main Loop
+###################################
+if [ $# -eq 0 ]
+then
+    print_help
+    exit 0
+fi
+#Parse args
+while [ $# -gt 0 ]
+do
+    case $1 in
+        -h|--help|-?)
+            print_help
+            exit 0
+            ;;
+        -o|--output)
+            output_file=$2
+            shift 2
+            ;;
+        -e:*|--executive:*)
+            case ${1#*:} in
+                sample) sample_func=$2 ;;
+                ffmpeg) ffmpeg_func=$2 ;;
+            esac
+            shift 2
+            ;;
+        -s:*|--stream:*)
+            case ${1#*:} in
+                #mpeg2) mp2str=($2);;
+                h264) avcstr=($2);;
+                #hevc) hevcstr=($2);;
+                *) err_exit "Unknown stream spec $1"
+            esac
+            shift 2
+            ;;
+        --lock-freq)
+            get_password
+            lock_freq
+            shift
+            ;;
+        --get-freq)
+            get_password
+            get_freq
+            shift
+            ;;
+        --set-slice-num)
+            get_password
+            set_slice_num $2
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+[ -e ${time_func} ] || exit_failure "intel_gpu_time is NOT found."
+[ -e ${sample_func} ] || exit_failure "${sample_func} is NOT found."
+[ -e ${ffmpeg_func} ] || exit_failure "${ffmpeg_func} is NOT found."
+
+get_password
+#Do performance test
+echo "param,time,cpu,gpu," > ${output_file}
+if [ "x"${avcstr} != "x" ] && [ -f ${avcstr} ]
+then
+    echo "sample_vid_tu_1,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 1 -b 2000)" >> ${output_file}
+    echo "sample_vid_tu_4,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 4 -b 2000)" >> ${output_file}
+    echo "sample_vid_tu_7,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000)" >> ${output_file}
+
+    echo "sample_vid_la_10,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 10)" >> ${output_file}
+    echo "sample_vid_la_40,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 40)" >> ${output_file}
+    echo "sample_vid_la_70,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 70)" >> ${output_file}
+
+    echo "sample_vid_as_1,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 1 -u 7 -b 2000)" >> ${output_file}
+
+    echo "sample_sys_tu_1,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 1 -b 2000 -sys)" >> ${output_file}
+    echo "sample_sys_tu_4,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 4 -b 2000 -sys)" >> ${output_file}
+    echo "sample_sys_tu_7,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -sys)" >> ${output_file}
+
+    echo "sample_sys_la_10,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 10 -sys)" >> ${output_file}
+    echo "sample_sys_la_40,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 40 -sys)" >> ${output_file}
+    echo "sample_sys_la_70,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 4 -u 7 -b 2000 -la -lad 70 -sys)" >> ${output_file}
+
+    echo "sample_sys_as_1,$(exec_cmd ${sample_func} -hw -i::h264 ${avcstr} -o::h264 /dev/null -async 1 -u 7 -b 2000 -sys)" >> ${output_file}
+
+    echo "ffmpeg_vid_tu_1,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 1 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_vid_tu_4,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 4 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_vid_tu_7,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -f h264 -y /dev/null)" >> ${output_file}
+
+    echo "ffmpeg_vid_la_10,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 10 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_vid_la_40,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 40 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_vid_la_70,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 70 -f h264 -y /dev/null)" >> ${output_file}
+
+    echo "ffmpeg_vid_as_1,$(exec_cmd ${ffmpeg_func} -hwaccel qsv -async_depth 1 -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -async_depth 1 -f h264 -y /dev/null)" >> ${output_file}
+
+    echo "ffmpeg_sys_tu_1,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 1 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_sys_tu_4,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 4 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_sys_tu_7,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -f h264 -y /dev/null)" >> ${output_file}
+
+    echo "ffmpeg_sys_la_10,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 10 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_sys_la_40,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 40 -f h264 -y /dev/null)" >> ${output_file}
+    echo "ffmpeg_sys_la_70,$(exec_cmd ${ffmpeg_func} -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -look_ahead 1 -look_ahead_depth 70 -f h264 -y /dev/null)" >> ${output_file}
+
+    echo "ffmpeg_sys_as_1,$(exec_cmd ${ffmpeg_func} -async_depth 1 -c:v h264_qsv -i ${avcstr} -c:v h264_qsv -b:v 2M -preset 7 -async_depth 1 -f h264 -y /dev/null)" >> ${output_file}
+fi
+
