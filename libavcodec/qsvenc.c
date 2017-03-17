@@ -323,19 +323,28 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
 {
     uint8_t sps_buf[128];
     uint8_t pps_buf[128];
+    uint8_t vps_buf[128];
 
-    mfxExtCodingOptionSPSPPS extradata = {
+    mfxExtCodingOptionSPSPPS spspps = {
         .Header.BufferId = MFX_EXTBUFF_CODING_OPTION_SPSPPS,
-        .Header.BufferSz = sizeof(extradata),
+        .Header.BufferSz = sizeof(spspps),
         .SPSBuffer = sps_buf, .SPSBufSize = sizeof(sps_buf),
         .PPSBuffer = pps_buf, .PPSBufSize = sizeof(pps_buf)
     };
 
+    mfxExtCodingOptionVPS vps = {
+        .Header.BufferId = MFX_EXTBUFF_CODING_OPTION_VPS,
+        .Header.BufferSz = sizeof(vps),
+        .VPSBuffer  = vps_buf, .VPSBufSize = sizeof(vps_buf),
+    };
+
     mfxExtBuffer *ext_buffers[] = {
-        (mfxExtBuffer*)&extradata,
+        (mfxExtBuffer*)&spspps,
+        (mfxExtBuffer*)&vps,
     };
 
     int need_pps = avctx->codec_id != AV_CODEC_ID_MPEG2VIDEO;
+    int need_vps = avctx->codec_id == AV_CODEC_ID_HEVC;
     int ret;
 
     q->param.ExtParam    = ext_buffers;
@@ -351,21 +360,33 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         q->packet_size = q->param.mfx.FrameInfo.Height * q->param.mfx.FrameInfo.Width * 4;
     }
 
-    if (!extradata.SPSBufSize || (need_pps && !extradata.PPSBufSize)) {
+    if (   !spspps.SPSBufSize
+        || (need_pps && !spspps.PPSBufSize)
+        /*Note: if no vps found, we can generate a fake one*/
+        /*|| (need_vps && !vps.VPSBufSize)*/) {
         av_log(avctx, AV_LOG_ERROR, "No extradata returned from libmfx.\n");
         return AVERROR_UNKNOWN;
     }
 
-    avctx->extradata = av_malloc(extradata.SPSBufSize + need_pps * extradata.PPSBufSize +
-                                 AV_INPUT_BUFFER_PADDING_SIZE);
+    avctx->extradata_size = spspps.SPSBufSize +
+                            need_pps * spspps.PPSBufSize +
+                            need_vps * vps.VPSBufSize;
+    avctx->extradata = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata)
         return AVERROR(ENOMEM);
 
-    memcpy(avctx->extradata,                        sps_buf, extradata.SPSBufSize);
+    if (need_vps)
+        memcpy(avctx->extradata, vps.VPSBuffer, vps.VPSBufSize);
+    memcpy(avctx->extradata + need_vps * vps.VPSBufSize, spspps.SPSBuffer, spspps.SPSBufSize);
     if (need_pps)
-        memcpy(avctx->extradata + extradata.SPSBufSize, pps_buf, extradata.PPSBufSize);
-    avctx->extradata_size = extradata.SPSBufSize + need_pps * extradata.PPSBufSize;
-    memset(avctx->extradata + avctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+        memcpy(avctx->extradata + need_vps * vps.VPSBufSize + spspps.SPSBufSize,
+                spspps.PPSBuffer, spspps.PPSBufSize);
+
+    /*
+     * For hevc, if hw_plugin is loaded, we can get VPS via API.
+     * Otherwise, we set this flag to 0 to generate a fake VPS outside.
+     */
+    q->has_vps = (need_vps && vps.VPSBufSize);
 
     return 0;
 }
