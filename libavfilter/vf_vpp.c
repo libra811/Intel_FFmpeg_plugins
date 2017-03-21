@@ -58,8 +58,8 @@ enum EOFAction {
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 
 /* width must be a multiple of 16
-+ * height must be a multiple of 16 in case of frame picture and a multiple of 32 in case of field picture
-+ */
+ * height must be a multiple of 16 in case of frame picture and a multiple of 32 in case of field picture
+ */
 #define INIT_FRAMEINFO(frameinfo, format, w, h, pic_struct, tbn, tbd) {\
     (frameinfo).FourCC = avpix_fmt_to_mfx_fourcc(format); \
     (frameinfo).ChromaFormat = get_chroma_fourcc((frameinfo).FourCC); \
@@ -78,7 +78,7 @@ enum EOFAction {
         VPP_ALIGN16(h) : VPP_ALIGN32(h); \
 }
 
- static const AVOption vpp_options[] = {
+static const AVOption vpp_options[] = {
     { "deinterlace", "deinterlace mode: 0=off, 1=bob, 2=advanced",             OFFSET(deinterlace),  AV_OPT_TYPE_INT, {.i64=0}, 0, MFX_DEINTERLACING_ADVANCED, .flags = FLAGS },
     { "denoise",     "denoise level [0, 100]",                                 OFFSET(denoise),      AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
     { "detail",      "detail enhancement level [0, 100]",                      OFFSET(detail),       AV_OPT_TYPE_INT, {.i64=0}, 0, 100, .flags = FLAGS },
@@ -129,7 +129,7 @@ enum EOFAction {
         { "endall", "End both streams.",            0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_ENDALL }, .flags = FLAGS, "eof_action" },
 
     { NULL }
- };
+};
 
 AVFILTER_DEFINE_CLASS(vpp);
 
@@ -438,6 +438,7 @@ static int get_free_surface_index_out(mfxFrameSurface1 ** surface_pool, int star
 
     return MFX_ERR_NOT_FOUND;
 }
+
 static int sysmem_map_frame_to_surface(VPPContext *vpp, AVFrame *frame, mfxFrameSurface1 *surface)
 {
     surface->Info.PicStruct = avframe_id_to_mfx_pic_struct(frame);
@@ -693,18 +694,17 @@ static int init_vpp_param(VPPContext *vpp, int format, int input_w, int input_h,
         vpp->inter_vpp[0].pVppParam->ExtParam[vpp->inter_vpp[0].pVppParam->NumExtParam++]
                 = (mfxExtBuffer*)&(vpp->procamp_conf);
     }
-
     /*
-+     * Init 2nd qsvvpp, used as frc/detail/deinterlace/denoise.
-+     */
+     * Init 2nd qsvvpp, used as frc/detail/deinterlace/denoise.
+     */
     if (vpp->use_composite) {
         vpp->num_vpp++;
         vpp->inter_vpp[1].nb_inputs = vpp->ctx->nb_inputs;
         vpp->inter_vpp[1].pVppParam = &vpp->inter_vpp[1].VppParam;
         /*
-+         * 2 linked vpp will be used, so we use video memory to pass
-+         * frames between them.
-+         */
+         * 2 linked vpp will be used, so we use video memory to pass
+         * frames between them.
+         */
         vpp->inter_vpp[0].pVppParam->IOPattern |= MFX_IOPATTERN_OUT_VIDEO_MEMORY;
         vpp->inter_vpp[1].pVppParam->IOPattern =  MFX_IOPATTERN_IN_VIDEO_MEMORY;
         if(NULL != vpp->pFrameAllocator)
@@ -876,11 +876,11 @@ int av_qsv_pipeline_config_vpp(AVCodecContext *dec_ctx, AVFilterContext *vpp_ctx
 {
     VPPContext *vpp = vpp_ctx->priv;
 
-	av_log(vpp->ctx, AV_LOG_INFO, "vpp initializing with session = %p\n", vpp->inter_vpp[0].session);
+    av_log(vpp->ctx, AV_LOG_INFO, "vpp initializing with session = %p\n", vpp->inter_vpp[0].session);
 
     init_vpp_param(vpp, dec_ctx->pix_fmt, dec_ctx->width, dec_ctx->height,
-		                frame_rate_num, frame_rate_den,
-		                field_order_to_mfx_pic_struct(dec_ctx));
+                        frame_rate_num, frame_rate_den,
+                        field_order_to_mfx_pic_struct(dec_ctx) );
     return initial_vpp(vpp);
 }
 
@@ -890,8 +890,8 @@ static int config_vpp(AVFilterLink *inlink, AVFrame * pic)
     VPPContext      *vpp = ctx->priv;
 
     init_vpp_param(vpp, inlink->format, inlink->w, inlink->h,
-		                inlink->frame_rate.num, inlink->frame_rate.den,
-		                avframe_id_to_mfx_pic_struct(pic));
+                        inlink->frame_rate.num, inlink->frame_rate.den,
+                        avframe_id_to_mfx_pic_struct(pic));
 
     return initial_vpp(vpp);
 }
@@ -1364,6 +1364,8 @@ static int config_output(AVFilterLink *outlink)
      */
     if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
         vpp->framerate = main_in->frame_rate;
+    if (vpp->framerate.den == 0 || vpp->framerate.num == 0)
+        vpp->framerate = (AVRational){25, 1};
 
     /*
      * if out_w is not set(<=0), we calc it based on out_h;
