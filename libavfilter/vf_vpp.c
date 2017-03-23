@@ -76,6 +76,12 @@ enum EOFAction {
     (frameinfo).Height = \
         (MFX_PICSTRUCT_PROGRESSIVE == pic_struct) ? \
         VPP_ALIGN16(h) : VPP_ALIGN32(h); \
+    if (!(frameinfo).FrameRateExtN || !(frameinfo).FrameRateExtD) { \
+        av_log(NULL, AV_LOG_WARNING, "[VPP]: No input framerate available." \
+            "Falling back to default 25fps.\n"); \
+        (frameinfo).FrameRateExtN = 25; \
+        (frameinfo).FrameRateExtD = 1; \
+    } \
 }
 
 static const AVOption vpp_options[] = {
