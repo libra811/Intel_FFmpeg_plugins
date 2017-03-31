@@ -175,6 +175,8 @@ typedef struct QSVEncContext {
     unsigned short enable_global_motion_bias;
     unsigned short mv_cost_sf;
 
+    AVBufferRef *out_frames_ref;
+
     int a53_cc;
     char *load_plugins;
     SetEncodeCtrlCB *set_encode_ctrl_cb;

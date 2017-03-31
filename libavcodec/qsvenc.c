@@ -797,6 +797,8 @@ static int qsvenc_init_session(AVCodecContext *avctx, QSVEncContext *q)
 
 int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
 {
+    AVHWFramesContext *out_frames_ctx;
+    AVQSVFramesContext *out_frames_hwctx;
     int iopattern = 0;
     int opaque_alloc = 0;
     int ret;
@@ -818,6 +820,29 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     if (avctx->hw_frames_ctx) {
         AVHWFramesContext    *frames_ctx = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
         AVQSVFramesContext *frames_hwctx = frames_ctx->hwctx;
+#if 1
+        //Update the hw_frames_ctx ctreated by self when video mem
+        q->out_frames_ref = av_hwframe_ctx_alloc(frames_ctx->device_ref);
+        if (!q->out_frames_ref)
+            return AVERROR(ENOMEM);
+        out_frames_ctx   = (AVHWFramesContext*)q->out_frames_ref->data;
+        out_frames_hwctx = out_frames_ctx->hwctx;
+
+        out_frames_ctx->format            = frames_ctx->format;
+        out_frames_ctx->width             = frames_ctx->width;
+        out_frames_ctx->height            = frames_ctx->height;
+        out_frames_ctx->sw_format         = frames_ctx->sw_format;
+        out_frames_ctx->initial_pool_size = 0;
+        out_frames_hwctx->frame_type = frames_hwctx->frame_type;
+
+        ret = av_hwframe_ctx_init(q->out_frames_ref);
+        if (ret < 0)
+            return ret;
+
+        av_buffer_unref(&avctx->hw_frames_ctx);
+        avctx->hw_frames_ctx = q->out_frames_ref;
+
+#endif
 
         if (!iopattern) {
             if (frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME)
