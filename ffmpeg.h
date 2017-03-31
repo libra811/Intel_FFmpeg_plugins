@@ -231,6 +231,17 @@ typedef struct InputFilter {
     struct InputStream *ist;
     struct FilterGraph *graph;
     uint8_t            *name;
+    enum AVMediaType    type;   // AVMEDIA_TYPE_SUBTITLE for sub2video
+    AVFifoBuffer       *frame_queue;
+    // parameters configured for this input
+    int                 format;
+    AVBufferRef        *hw_frames_ctx;
+    int width, height;
+    AVRational sample_aspect_ratio;
+
+    int sample_rate;
+    int channels;
+    uint64_t channel_layout;
 } InputFilter;
 
 typedef struct OutputFilter {
@@ -295,14 +306,6 @@ typedef struct InputStream {
     int guess_layout_max;
 
     int autorotate;
-    int resample_height;
-    int resample_width;
-    int resample_pix_fmt;
-
-    int      resample_sample_fmt;
-    int      resample_sample_rate;
-    int      resample_channels;
-    uint64_t resample_channel_layout;
 
     int fix_sub_duration;
     struct { /* previous decoded subtitle and related variables */
@@ -353,6 +356,8 @@ typedef struct InputStream {
 
     int64_t *dts_buffer;
     int nb_dts_buffer;
+
+    int got_output;
 } InputStream;
 
 typedef struct InputFile {
@@ -479,6 +484,8 @@ typedef struct OutputStream {
     // parameters are set in the AVStream.
     int initialized;
 
+    int inputs_done;
+
     const char *attachment_filename;
     int copy_initial_nonkeyframes;
     int copy_prior_start;
@@ -597,6 +604,7 @@ void choose_sample_fmt(AVStream *st, AVCodec *codec);
 
 int configure_filtergraph(FilterGraph *fg);
 int configure_output_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out);
+int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame);
 int ist_in_filtergraph(FilterGraph *fg, InputStream *ist);
 int filtergraph_is_simple(FilterGraph *fg);
 int init_simple_filtergraph(InputStream *ist, OutputStream *ost);
@@ -609,7 +617,6 @@ int dxva2_init(AVCodecContext *s);
 int vda_init(AVCodecContext *s);
 int videotoolbox_init(AVCodecContext *s);
 int qsv_init(AVCodecContext *s);
-int qsv_transcode_init(OutputStream *ost);
 int vaapi_decode_init(AVCodecContext *avctx);
 int vaapi_device_init(const char *device);
 int cuvid_init(AVCodecContext *s);
