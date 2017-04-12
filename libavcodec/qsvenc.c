@@ -109,7 +109,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.NumSlice           = avctx->slices;
     q->param.mfx.NumRefFrame        = FFMAX(0, avctx->refs);
     q->param.mfx.EncodedOrder       = 0;
-    q->param.mfx.BufferSizeInKB     = 0;
+    q->param.mfx.BufferSizeInKB     = q->buffer_size/1000;
 
     if (avctx->flags & AV_CODEC_FLAG_QSCALE) {
         q->param.mfx.RateControlMethod = MFX_RATECONTROL_CQP;
