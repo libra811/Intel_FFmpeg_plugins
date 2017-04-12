@@ -372,7 +372,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.NumSlice           = avctx->slices;
     q->param.mfx.NumRefFrame        = FFMAX(0, avctx->refs);
     q->param.mfx.EncodedOrder       = 0;
-    q->param.mfx.BufferSizeInKB     = 0;
+    q->param.mfx.BufferSizeInKB     = q->buffer_size/1000;
 
     if (avctx->hw_frames_ctx) {
         AVHWFramesContext *frames_ctx = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
