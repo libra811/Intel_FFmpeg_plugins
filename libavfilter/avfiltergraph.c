@@ -193,7 +193,7 @@ AVFilterContext *avfilter_graph_alloc_filter(AVFilterGraph *graph,
         } else {
             int ret = ff_graph_thread_init(graph);
             if (ret < 0) {
-                av_log(graph, AV_LOG_ERROR, "Error initializing threading.\n");
+                av_log(graph, AV_LOG_ERROR, "Error initializing threading: %s.\n", av_err2str(ret));
                 return NULL;
             }
         }
@@ -1399,10 +1399,13 @@ int avfilter_graph_request_oldest(AVFilterGraph *graph)
         oldest = graph->sink_links[0];
         if (oldest->dst->filter->activate) {
             /* For now, buffersink is the only filter implementing activate. */
-            return av_buffersink_get_frame_flags(oldest->dst, NULL,
-                                                 AV_BUFFERSINK_FLAG_PEEK);
+            r = av_buffersink_get_frame_flags(oldest->dst, NULL,
+                                              AV_BUFFERSINK_FLAG_PEEK);
+            if (r != AVERROR_EOF)
+                return r;
+        } else {
+            r = ff_request_frame(oldest);
         }
-        r = ff_request_frame(oldest);
         if (r != AVERROR_EOF)
             break;
         av_log(oldest->dst, AV_LOG_DEBUG, "EOF on sink link %s:%s.\n",
